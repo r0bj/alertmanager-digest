@@ -70,6 +70,7 @@ func buildSlackPayload(cfg Config, alerts []Alert, historicalAlerts []Historical
 	blocks = appendErrorBlocks(blocks, fetchErrors)
 
 	if cfg.History.Enabled {
+		blocks = append(blocks, dividerBlock())
 		blocks = appendHistoryBlocks(blocks, cfg, historicalAlerts)
 		blocks = appendHistoryErrorBlocks(blocks, historyErrors)
 	}
@@ -333,6 +334,12 @@ func mrkdwnBlock(text string) SlackBlock {
 			Type: "mrkdwn",
 			Text: text,
 		},
+	}
+}
+
+func dividerBlock() SlackBlock {
+	return SlackBlock{
+		Type: "divider",
 	}
 }
 

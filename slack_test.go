@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -92,5 +93,69 @@ func TestAppendHistoryBlocksDoesNotUseInlineCodeForWindow(t *testing.T) {
 	}
 	if strings.Contains(summary, "`24h`") {
 		t.Fatalf("expected no inline-code formatting for history window, got %q", summary)
+	}
+}
+
+func TestBuildSlackPayloadUsesTopLevelBlocks(t *testing.T) {
+	cfg := Config{
+		Title: "Daily Alertmanager digest",
+		Slack: SlackConfig{
+			SendEmptyMessage: true,
+		},
+	}
+
+	payload := buildSlackPayload(cfg, nil, nil, nil, nil)
+
+	if len(payload.Blocks) == 0 {
+		t.Fatal("expected top-level blocks")
+	}
+	if payload.Text == "" {
+		t.Fatal("expected fallback text")
+	}
+}
+
+func TestBuildSlackPayloadDoesNotUseAttachments(t *testing.T) {
+	cfg := Config{
+		Title: "Daily Alertmanager digest",
+		Slack: SlackConfig{
+			SendEmptyMessage: true,
+		},
+	}
+
+	payload := buildSlackPayload(cfg, nil, nil, nil, nil)
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	if strings.Contains(string(encoded), `"attachments":`) {
+		t.Fatalf("expected no attachments in payload JSON, got %s", encoded)
+	}
+}
+
+func TestBuildSlackPayloadSeparatesActiveAndHistoricalSections(t *testing.T) {
+	cfg := Config{
+		Title: "Daily Alertmanager digest",
+		History: HistoryConfig{
+			Enabled: true,
+			Window:  Duration{Duration: 24 * time.Hour},
+		},
+		Slack: SlackConfig{
+			SendEmptyMessage: true,
+		},
+	}
+
+	payload := buildSlackPayload(cfg, nil, nil, nil, nil)
+	blocks := payload.Blocks
+
+	foundDivider := false
+	for _, block := range blocks {
+		if block.Type == "divider" {
+			foundDivider = true
+			break
+		}
+	}
+	if !foundDivider {
+		t.Fatalf("expected divider block between active and historical sections, got %#v", blocks)
 	}
 }
