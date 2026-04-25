@@ -102,6 +102,11 @@ type SlackText struct {
 
 func main() {
 	var configPath string
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [--config PATH]\n\n", os.Args[0])
+		fmt.Fprintln(flag.CommandLine.Output(), "Options:")
+		fmt.Fprintln(flag.CommandLine.Output(), "  --config PATH  Path to config YAML file (default \"config.yaml\")")
+	}
 	flag.StringVar(&configPath, "config", "config.yaml", "Path to config YAML file")
 	flag.Parse()
 
