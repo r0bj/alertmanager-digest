@@ -520,31 +520,31 @@ func splitSourceList(source string) []string {
 }
 
 func humanDurationSince(t time.Time) string {
-	elapsed := time.Since(t)
-	if elapsed < time.Minute {
-		return "less than a minute"
+	seconds := int(time.Since(t).Round(time.Second).Seconds())
+	if seconds < 0 {
+		seconds = 0
 	}
 
-	minutes := int(elapsed.Round(time.Minute).Minutes())
-	if minutes < 60 {
-		return pluralize(minutes, "minute")
+	days := seconds / int((24 * time.Hour).Seconds())
+	seconds %= int((24 * time.Hour).Seconds())
+	hours := seconds / int(time.Hour.Seconds())
+	seconds %= int(time.Hour.Seconds())
+	minutes := seconds / int(time.Minute.Seconds())
+	seconds %= int(time.Minute.Seconds())
+
+	var parts []string
+	if days > 0 {
+		parts = append(parts, fmt.Sprintf("%dd", days))
 	}
-
-	hours := int(elapsed.Round(time.Hour).Hours())
-	if hours < 48 {
-		return pluralize(hours, "hour")
+	if hours > 0 || len(parts) > 0 {
+		parts = append(parts, fmt.Sprintf("%dh", hours))
 	}
-
-	days := int(elapsed.Round(24*time.Hour).Hours() / 24)
-	return pluralize(days, "day")
-}
-
-func pluralize(value int, unit string) string {
-	if value == 1 {
-		return fmt.Sprintf("%d %s", value, unit)
+	if minutes > 0 || len(parts) > 0 {
+		parts = append(parts, fmt.Sprintf("%dm", minutes))
 	}
+	parts = append(parts, fmt.Sprintf("%ds", seconds))
 
-	return fmt.Sprintf("%d %ss", value, unit)
+	return strings.Join(parts, " ")
 }
 
 func value(m map[string]string, key string, fallback string) string {

@@ -1,0 +1,38 @@
+# Example configuration for alertmanager-digest.
+#
+# Required:
+# - at least one Alertmanager in alertmanagers
+# - slackWebhookUrl here or SLACK_WEBHOOK_URL in the environment
+
+title: "Daily Alertmanager digest"
+
+# Prefer SLACK_WEBHOOK_URL for secrets in production.
+# slackWebhookUrl: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+
+alertmanagers:
+- name: prod
+  url: https://alertmanager.example.com
+
+# Optional filters passed to Alertmanager API.
+# filters:
+# - severity=~"warning|critical"
+
+# Labels shown next to each alert. Defaults to:
+# severity, alertname, cluster, namespace.
+groupBy:
+- severity
+- alertname
+- cluster
+- namespace
+- team
+
+slack:
+  # Send a Slack message even when there are no active alerts.
+  sendEmptyMessage: true
+  # Defaults to 40.
+  maxAlerts: 40
+
+# Optional HTTP settings.
+# timeout: 10s
+# http:
+#   insecureSkipVerify: false
