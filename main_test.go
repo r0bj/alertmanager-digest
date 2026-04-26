@@ -59,7 +59,7 @@ func TestAggregateHistoricalAlertsCountsByFingerprint(t *testing.T) {
 		},
 	}
 
-	alerts := aggregateHistoricalAlerts(entries)
+	alerts := aggregateHistoricalAlerts(entries, nil)
 	sortHistoricalAlerts(alerts)
 
 	if len(alerts) != 2 {
@@ -85,6 +85,49 @@ func TestAggregateHistoricalAlertsCountsByFingerprint(t *testing.T) {
 	}
 	if !strings.Contains(alerts[0].LogsURL, "project=bethink-prod") {
 		t.Fatalf("expected project in GCP Logs URL, got %q", alerts[0].LogsURL)
+	}
+}
+
+func TestAggregateHistoricalAlertsAppliesLabelFilters(t *testing.T) {
+	entries := []cloudLogEntry{
+		{
+			Timestamp: time.Date(2026, 4, 25, 10, 0, 0, 0, time.UTC),
+			JSONPayload: webhookLoggerPayload{
+				Alerts: webhookPayload{
+					Alerts: []webhookAlert{
+						{
+							Fingerprint: "warning",
+							Labels: map[string]string{
+								"alertname": "HighLatency",
+								"severity":  "warning",
+								"team":      "lms",
+							},
+						},
+						{
+							Fingerprint: "info",
+							Labels: map[string]string{
+								"alertname": "InfoAlert",
+								"severity":  "info",
+								"team":      "ops",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	matchers, err := parseLabelMatchers([]string{`severity=~"warning|critical"`, "team!=ops"})
+	if err != nil {
+		t.Fatalf("parse matchers: %v", err)
+	}
+
+	alerts := aggregateHistoricalAlerts(entries, matchers)
+
+	if len(alerts) != 1 {
+		t.Fatalf("expected 1 historical alert after filtering, got %d", len(alerts))
+	}
+	if alerts[0].Fingerprint != "warning" {
+		t.Fatalf("expected warning alert, got %q", alerts[0].Fingerprint)
 	}
 }
 

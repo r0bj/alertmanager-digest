@@ -51,7 +51,7 @@ func TestFormatHistoricalAlertUsesRelativeLastSeen(t *testing.T) {
 		LogsURL:  "https://console.cloud.google.com/logs/query;query=insertId%3D%22abc%22?project=bethink-prod",
 	}
 
-	line := formatHistoricalAlert(alert, []string{"severity", "alertname", "cluster"})
+	line := formatHistoricalAlert(alert, []string{"severity", "alertname", "cluster"}, nil)
 
 	if !strings.Contains(line, "occurrences: 3, last seen 2h 3m") {
 		t.Fatalf("expected relative last seen duration, got %q", line)
@@ -61,6 +61,100 @@ func TestFormatHistoricalAlertUsesRelativeLastSeen(t *testing.T) {
 	}
 	if !strings.Contains(line, "|GCP Logs>") {
 		t.Fatalf("expected GCP Logs link, got %q", line)
+	}
+}
+
+func TestFormatAlertShowsAllLabels(t *testing.T) {
+	alert := Alert{
+		Labels: map[string]string{
+			"alertname":   "HighLatency",
+			"cluster":     "c1",
+			"environment": "prod",
+			"severity":    "warning",
+			"team":        "lms",
+		},
+		StartsAt: time.Now(),
+	}
+
+	line := formatAlert(alert, []string{"*"}, nil)
+
+	for _, want := range []string{
+		"cluster=c1",
+		"environment=prod",
+		"severity=warning",
+		"team=lms",
+	} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("expected all-label output to contain %q, got %q", want, line)
+		}
+	}
+	if strings.Contains(line, "alertname=HighLatency") {
+		t.Fatalf("expected alertname to be excluded from label fields, got %q", line)
+	}
+}
+
+func TestFormatAlertShowsConfiguredDisplayLabels(t *testing.T) {
+	alert := Alert{
+		Labels: map[string]string{
+			"alertname":   "HighLatency",
+			"cluster":     "c1",
+			"environment": "prod",
+			"severity":    "warning",
+			"team":        "lms",
+		},
+		StartsAt: time.Now(),
+	}
+
+	line := formatAlert(alert, []string{"severity", "alertname", "team"}, nil)
+
+	if !strings.Contains(line, "severity=warning") || !strings.Contains(line, "team=lms") {
+		t.Fatalf("expected configured labels, got %q", line)
+	}
+	if strings.Contains(line, "cluster=c1") || strings.Contains(line, "environment=prod") {
+		t.Fatalf("expected only configured labels, got %q", line)
+	}
+}
+
+func TestFormatAlertExcludesLabelsFromAllLabels(t *testing.T) {
+	alert := Alert{
+		Labels: map[string]string{
+			"alertname":   "HighLatency",
+			"cluster":     "c1",
+			"environment": "prod",
+			"severity":    "warning",
+			"team":        "lms",
+		},
+		StartsAt: time.Now(),
+	}
+
+	line := formatAlert(alert, []string{"*"}, []string{"environment", "team"})
+
+	if !strings.Contains(line, "cluster=c1") || !strings.Contains(line, "severity=warning") {
+		t.Fatalf("expected non-excluded labels, got %q", line)
+	}
+	if strings.Contains(line, "environment=prod") || strings.Contains(line, "team=lms") {
+		t.Fatalf("expected excluded labels to be omitted, got %q", line)
+	}
+}
+
+func TestFormatAlertExcludesConfiguredDisplayLabels(t *testing.T) {
+	alert := Alert{
+		Labels: map[string]string{
+			"alertname": "HighLatency",
+			"cluster":   "c1",
+			"severity":  "warning",
+			"team":      "lms",
+		},
+		StartsAt: time.Now(),
+	}
+
+	line := formatAlert(alert, []string{"severity", "team", "cluster"}, []string{"team"})
+
+	if !strings.Contains(line, "severity=warning") || !strings.Contains(line, "cluster=c1") {
+		t.Fatalf("expected non-excluded configured labels, got %q", line)
+	}
+	if strings.Contains(line, "team=lms") {
+		t.Fatalf("expected excluded configured label to be omitted, got %q", line)
 	}
 }
 

@@ -50,10 +50,9 @@ func main() {
 
 	client := newHTTPClient(cfg)
 
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout.Duration)
-	defer cancel()
-
-	alerts, fetchErrors := fetchAllAlerts(ctx, client, cfg)
+	alertmanagerCtx, cancelAlertmanager := context.WithTimeout(context.Background(), cfg.Timeouts.Alertmanager.Duration)
+	alerts, fetchErrors := fetchAllAlerts(alertmanagerCtx, client, cfg)
+	cancelAlertmanager()
 
 	for _, err := range fetchErrors {
 		slog.Error("failed to fetch alerts", "error", err)
@@ -62,7 +61,9 @@ func main() {
 	alerts = deduplicateAlerts(alerts)
 	sortAlerts(alerts)
 
-	historicalAlerts, historyErrors := fetchHistoricalAlerts(ctx, client, cfg, time.Now())
+	historyCtx, cancelHistory := context.WithTimeout(context.Background(), cfg.Timeouts.History.Duration)
+	historicalAlerts, historyErrors := fetchHistoricalAlerts(historyCtx, client, cfg, time.Now())
+	cancelHistory()
 
 	for _, err := range historyErrors {
 		slog.Error("failed to fetch historical alerts", "error", err)
@@ -81,7 +82,10 @@ func main() {
 		return
 	}
 
-	if err := sendSlackMessage(ctx, client, cfg.SlackWebhookURL, payload); err != nil {
+	slackCtx, cancelSlack := context.WithTimeout(context.Background(), cfg.Timeouts.Slack.Duration)
+	err = sendSlackMessage(slackCtx, client, cfg.SlackWebhookURL, payload)
+	cancelSlack()
+	if err != nil {
 		slog.Error("failed to send Slack message", "error", err)
 		os.Exit(1)
 	}

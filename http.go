@@ -19,7 +19,6 @@ func newHTTPClient(cfg Config) *http.Client {
 	}
 
 	return &http.Client{
-		Timeout:   cfg.Timeout.Duration,
 		Transport: transport,
 	}
 }

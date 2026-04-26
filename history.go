@@ -80,6 +80,11 @@ func fetchHistoricalAlerts(ctx context.Context, client *http.Client, cfg Config,
 		return nil, nil
 	}
 
+	labelMatchers, err := parseLabelMatchers(cfg.Filters)
+	if err != nil {
+		return nil, []error{fmt.Errorf("history filters: %w", err)}
+	}
+
 	creds, err := google.FindDefaultCredentials(ctx, "https://www.googleapis.com/auth/logging.read")
 	if err != nil {
 		return nil, []error{fmt.Errorf("cloud logging credentials: %w", err)}
@@ -103,7 +108,7 @@ func fetchHistoricalAlerts(ctx context.Context, client *http.Client, cfg Config,
 	for {
 		resp, err := fetchCloudLoggingPage(ctx, client, token.AccessToken, requestBody)
 		if err != nil {
-			return aggregateHistoricalAlerts(entries), []error{err}
+			return aggregateHistoricalAlerts(entries, labelMatchers), []error{err}
 		}
 
 		entries = append(entries, resp.Entries...)
@@ -114,7 +119,7 @@ func fetchHistoricalAlerts(ctx context.Context, client *http.Client, cfg Config,
 		requestBody.PageToken = resp.NextPageToken
 	}
 
-	alerts := aggregateHistoricalAlerts(entries)
+	alerts := aggregateHistoricalAlerts(entries, labelMatchers)
 	sortHistoricalAlerts(alerts)
 
 	slog.Info("fetched historical alerts", "count", len(alerts), "occurrences", countHistoricalOccurrences(alerts), "window", cfg.History.Window.Duration)
@@ -181,7 +186,7 @@ func cloudLoggingResourceNames(projectIDs []string) []string {
 	return resourceNames
 }
 
-func aggregateHistoricalAlerts(entries []cloudLogEntry) []HistoricalAlert {
+func aggregateHistoricalAlerts(entries []cloudLogEntry, labelMatchers []labelMatcher) []HistoricalAlert {
 	seen := map[string]HistoricalAlert{}
 
 	for _, entry := range entries {
@@ -189,6 +194,9 @@ func aggregateHistoricalAlerts(entries []cloudLogEntry) []HistoricalAlert {
 			labels := webhookAlert.Labels
 			if len(labels) == 0 {
 				labels = entry.JSONPayload.Alerts.CommonLabels
+			}
+			if !labelsMatchFilters(labels, labelMatchers) {
+				continue
 			}
 
 			key := webhookAlert.Fingerprint

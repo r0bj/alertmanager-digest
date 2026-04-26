@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -63,7 +64,7 @@ func buildSlackPayload(cfg Config, alerts []Alert, historicalAlerts []Historical
 		blocks = append(blocks, mrkdwnBlock(summary))
 
 		for _, alert := range visibleAlerts {
-			blocks = append(blocks, mrkdwnBlock(formatAlert(alert, cfg.GroupBy)))
+			blocks = append(blocks, mrkdwnBlock(formatAlert(alert, cfg.DisplayLabels, cfg.ExcludeLabels)))
 		}
 	}
 
@@ -113,7 +114,7 @@ func appendHistoryBlocks(blocks []SlackBlock, cfg Config, historicalAlerts []His
 
 	blocks = append(blocks, mrkdwnBlock(summary))
 	for _, alert := range visibleAlerts {
-		blocks = append(blocks, mrkdwnBlock(formatHistoricalAlert(alert, cfg.GroupBy)))
+		blocks = append(blocks, mrkdwnBlock(formatHistoricalAlert(alert, cfg.DisplayLabels, cfg.ExcludeLabels)))
 	}
 
 	return blocks
@@ -158,22 +159,9 @@ func appendHistoryErrorBlocks(blocks []SlackBlock, errs []error) []SlackBlock {
 	return append(blocks, mrkdwnBlock(strings.Join(lines, "\n")))
 }
 
-func formatAlert(alert Alert, groupBy []string) string {
+func formatAlert(alert Alert, displayLabels []string, excludeLabels []string) string {
 	alertname := value(alert.Labels, "alertname", "unknown")
-	severity := value(alert.Labels, "severity", "unknown")
-
-	var parts []string
-	for _, label := range groupBy {
-		if label == "alertname" || label == "severity" {
-			continue
-		}
-
-		if val := alert.Labels[label]; val != "" {
-			parts = append(parts, fmt.Sprintf("%s=%s", label, escapeSlack(val)))
-		}
-	}
-
-	labelFields := append([]string{fmt.Sprintf("severity=%s", escapeSlack(severity))}, parts...)
+	labelFields := formatLabelFields(alert.Labels, displayLabels, excludeLabels)
 	activeSince := fmt.Sprintf("active for %s", humanDurationSince(alert.StartsAt))
 
 	line := fmt.Sprintf(
@@ -191,22 +179,9 @@ func formatAlert(alert Alert, groupBy []string) string {
 	return line
 }
 
-func formatHistoricalAlert(alert HistoricalAlert, groupBy []string) string {
+func formatHistoricalAlert(alert HistoricalAlert, displayLabels []string, excludeLabels []string) string {
 	alertname := value(alert.Labels, "alertname", "unknown")
-	severity := value(alert.Labels, "severity", "unknown")
-
-	var parts []string
-	for _, label := range groupBy {
-		if label == "alertname" || label == "severity" {
-			continue
-		}
-
-		if val := alert.Labels[label]; val != "" {
-			parts = append(parts, fmt.Sprintf("%s=%s", label, escapeSlack(val)))
-		}
-	}
-
-	labelFields := append([]string{fmt.Sprintf("severity=%s", escapeSlack(severity))}, parts...)
+	labelFields := formatLabelFields(alert.Labels, displayLabels, excludeLabels)
 	line := fmt.Sprintf(
 		"• *%s* (%s) occurrences: %d, last seen %s ago",
 		escapeSlack(alertname),
@@ -227,6 +202,69 @@ func formatHistoricalAlert(alert HistoricalAlert, groupBy []string) string {
 	}
 
 	return line
+}
+
+func formatLabelFields(labels map[string]string, displayLabels []string, excludeLabels []string) []string {
+	excluded := excludedLabelSet(excludeLabels)
+	excluded["alertname"] = true
+
+	if showsAllLabels(displayLabels) {
+		return formatAllLabelFields(labels, excluded)
+	}
+
+	var fields []string
+	for _, label := range displayLabels {
+		if excluded[label] {
+			continue
+		}
+
+		if val := labels[label]; val != "" {
+			fields = append(fields, fmt.Sprintf("%s=%s", label, escapeSlack(val)))
+		}
+	}
+
+	return fields
+}
+
+func excludedLabelSet(excludeLabels []string) map[string]bool {
+	excluded := make(map[string]bool, len(excludeLabels)+1)
+	for _, label := range excludeLabels {
+		if label != "" {
+			excluded[label] = true
+		}
+	}
+
+	return excluded
+}
+
+func showsAllLabels(displayLabels []string) bool {
+	for _, label := range displayLabels {
+		if label == "*" {
+			return true
+		}
+	}
+
+	return false
+}
+
+func formatAllLabelFields(labels map[string]string, excluded map[string]bool) []string {
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
+		if excluded[key] {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	fields := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if val := labels[key]; val != "" {
+			fields = append(fields, fmt.Sprintf("%s=%s", key, escapeSlack(val)))
+		}
+	}
+
+	return fields
 }
 
 func alertLinks(alert Alert) []string {

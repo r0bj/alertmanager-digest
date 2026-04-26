@@ -15,12 +15,20 @@ type Config struct {
 	Title           string           `yaml:"title"`
 	DryRun          bool             `yaml:"dryRun"`
 	Timeout         Duration         `yaml:"timeout"`
+	Timeouts        TimeoutsConfig   `yaml:"timeouts"`
 	Alertmanagers   []Alertmanager   `yaml:"alertmanagers"`
 	Filters         []string         `yaml:"filters"`
-	GroupBy         []string         `yaml:"groupBy"`
+	DisplayLabels   []string         `yaml:"displayLabels"`
+	ExcludeLabels   []string         `yaml:"excludeLabels"`
 	Slack           SlackConfig      `yaml:"slack"`
 	HTTP            HTTPClientConfig `yaml:"http"`
 	History         HistoryConfig    `yaml:"history"`
+}
+
+type TimeoutsConfig struct {
+	Alertmanager Duration `yaml:"alertmanager"`
+	History      Duration `yaml:"history"`
+	Slack        Duration `yaml:"slack"`
 }
 
 type Duration struct {
@@ -59,6 +67,15 @@ func loadConfig(path string) (Config, error) {
 	if cfg.Timeout.Duration == 0 {
 		cfg.Timeout.Duration = 10 * time.Second
 	}
+	if cfg.Timeouts.Alertmanager.Duration == 0 {
+		cfg.Timeouts.Alertmanager.Duration = cfg.Timeout.Duration
+	}
+	if cfg.Timeouts.History.Duration == 0 {
+		cfg.Timeouts.History.Duration = cfg.Timeout.Duration
+	}
+	if cfg.Timeouts.Slack.Duration == 0 {
+		cfg.Timeouts.Slack.Duration = cfg.Timeout.Duration
+	}
 	if cfg.Slack.MaxAlerts == 0 {
 		cfg.Slack.MaxAlerts = 40
 	}
@@ -78,8 +95,8 @@ func loadConfig(path string) (Config, error) {
 			cfg.History.ProjectIDs = []string{projectID}
 		}
 	}
-	if len(cfg.GroupBy) == 0 {
-		cfg.GroupBy = []string{"severity", "alertname", "cluster", "namespace"}
+	if len(cfg.DisplayLabels) == 0 {
+		cfg.DisplayLabels = []string{"severity", "alertname", "cluster", "namespace"}
 	}
 
 	if envWebhook := os.Getenv("SLACK_WEBHOOK_URL"); envWebhook != "" {
@@ -96,6 +113,16 @@ func validateConfig(cfg Config) error {
 
 	if len(cfg.Alertmanagers) == 0 {
 		return errors.New("at least one alertmanager is required")
+	}
+
+	if cfg.Timeouts.Alertmanager.Duration <= 0 {
+		return errors.New("timeouts.alertmanager must be greater than 0")
+	}
+	if cfg.Timeouts.History.Duration <= 0 {
+		return errors.New("timeouts.history must be greater than 0")
+	}
+	if cfg.Timeouts.Slack.Duration <= 0 {
+		return errors.New("timeouts.slack must be greater than 0")
 	}
 
 	if cfg.History.Enabled {

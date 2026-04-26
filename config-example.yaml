@@ -13,18 +13,25 @@ alertmanagers:
 - name: prod
   url: https://alertmanager.example.com
 
-# Optional filters passed to Alertmanager API.
+# Optional label filters passed to Alertmanager API and applied to historical
+# alerts decoded from Cloud Logging. Supported historical matcher operators:
+# =, !=, =~, !~.
 # filters:
 # - severity=~"warning|critical"
 
 # Labels shown next to each alert. Defaults to:
 # severity, alertname, cluster, namespace.
-groupBy:
+# Use ["*"] to show all labels.
+displayLabels:
 - severity
 - alertname
 - cluster
 - namespace
 - team
+# Labels hidden from Slack output after displayLabels is applied.
+# excludeLabels:
+# - prometheus
+# - prometheus_namespace
 
 slack:
   # Send a Slack message even when there are no active alerts.
@@ -49,6 +56,11 @@ history:
   pageSize: 1000
 
 # Optional HTTP settings.
+# timeout is a backward-compatible default for all stage-specific timeouts below.
 # timeout: 10s
+# timeouts:
+#   alertmanager: 10s
+#   history: 30s
+#   slack: 10s
 # http:
 #   insecureSkipVerify: false
