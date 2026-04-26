@@ -11,10 +11,13 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/oauth2/google"
 )
+
+const defaultHistoryProjectConcurrency = 4
 
 type HistoryConfig struct {
 	Enabled    bool     `yaml:"enabled"`
@@ -97,8 +100,73 @@ func fetchHistoricalAlerts(ctx context.Context, client *http.Client, cfg Config,
 
 	start := now.Add(-cfg.History.Window.Duration)
 	filter := buildHistoryFilter(cfg.History.Filter, start, now)
+
+	entries, errs := fetchHistoricalAlertEntriesForProjects(ctx, client, token.AccessToken, cfg, filter, labelMatchers)
+
+	alerts := aggregateHistoricalAlerts(entries, labelMatchers)
+	sortHistoricalAlerts(alerts)
+
+	return alerts, errs
+}
+
+func fetchHistoricalAlertEntriesForProjects(ctx context.Context, client *http.Client, accessToken string, cfg Config, filter string, labelMatchers []labelMatcher) ([]cloudLogEntry, []error) {
+	type projectResult struct {
+		entries []cloudLogEntry
+		err     error
+	}
+
+	results := make([]projectResult, len(cfg.History.ProjectIDs))
+	concurrency := min(defaultHistoryProjectConcurrency, len(cfg.History.ProjectIDs))
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+
+	for i, projectID := range cfg.History.ProjectIDs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				results[i].err = ctx.Err()
+				return
+			}
+
+			projectEntries, err := fetchHistoricalAlertEntriesForProject(ctx, client, accessToken, cfg, projectID, filter)
+			results[i] = projectResult{
+				entries: projectEntries,
+				err:     err,
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	var entries []cloudLogEntry
+	var errs []error
+	for i, projectID := range cfg.History.ProjectIDs {
+		projectEntries := results[i].entries
+		err := results[i].err
+		projectAlerts := aggregateHistoricalAlerts(projectEntries, labelMatchers)
+		sortHistoricalAlerts(projectAlerts)
+
+		if err != nil {
+			errs = append(errs, fmt.Errorf("project %q: %w", projectID, err))
+			logFetchedHistoricalAlerts(projectID, projectAlerts, cfg, err)
+		} else {
+			logFetchedHistoricalAlerts(projectID, projectAlerts, cfg, nil)
+		}
+
+		entries = append(entries, projectEntries...)
+	}
+
+	return entries, errs
+}
+
+func fetchHistoricalAlertEntriesForProject(ctx context.Context, client *http.Client, accessToken string, cfg Config, projectID string, filter string) ([]cloudLogEntry, error) {
 	requestBody := cloudLoggingListRequest{
-		ResourceNames: cloudLoggingResourceNames(cfg.History.ProjectIDs),
+		ResourceNames: []string{cloudLoggingResourceName(projectID)},
 		Filter:        filter,
 		OrderBy:       "timestamp desc",
 		PageSize:      cfg.History.PageSize,
@@ -106,9 +174,9 @@ func fetchHistoricalAlerts(ctx context.Context, client *http.Client, cfg Config,
 
 	var entries []cloudLogEntry
 	for {
-		resp, err := fetchCloudLoggingPage(ctx, client, token.AccessToken, requestBody)
+		resp, err := fetchCloudLoggingPage(ctx, client, accessToken, requestBody)
 		if err != nil {
-			return aggregateHistoricalAlerts(entries, labelMatchers), []error{err}
+			return entries, err
 		}
 
 		entries = append(entries, resp.Entries...)
@@ -119,12 +187,23 @@ func fetchHistoricalAlerts(ctx context.Context, client *http.Client, cfg Config,
 		requestBody.PageToken = resp.NextPageToken
 	}
 
-	alerts := aggregateHistoricalAlerts(entries, labelMatchers)
-	sortHistoricalAlerts(alerts)
+	return entries, nil
+}
 
-	slog.Info("fetched historical alerts", "count", len(alerts), "occurrences", countHistoricalOccurrences(alerts), "window", cfg.History.Window.Duration)
+func logFetchedHistoricalAlerts(projectID string, alerts []HistoricalAlert, cfg Config, err error) {
+	args := []any{
+		"project_id", projectID,
+		"count", len(alerts),
+		"occurrences", countHistoricalOccurrences(alerts),
+		"window", cfg.History.Window.Duration,
+	}
+	if err != nil {
+		args = append(args, "error", err)
+		slog.Warn("failed to fetch historical alerts", args...)
+		return
+	}
 
-	return alerts, nil
+	slog.Info("fetched historical alerts", args...)
 }
 
 func fetchCloudLoggingPage(ctx context.Context, client *http.Client, accessToken string, requestBody cloudLoggingListRequest) (cloudLoggingListResponse, error) {
@@ -177,13 +256,8 @@ func buildHistoryFilter(configuredFilter string, start time.Time, end time.Time)
 	return fmt.Sprintf("(%s) AND (%s)", configuredFilter, timeFilter)
 }
 
-func cloudLoggingResourceNames(projectIDs []string) []string {
-	resourceNames := make([]string, 0, len(projectIDs))
-	for _, projectID := range projectIDs {
-		resourceNames = append(resourceNames, "projects/"+projectID)
-	}
-
-	return resourceNames
+func cloudLoggingResourceName(projectID string) string {
+	return "projects/" + projectID
 }
 
 func aggregateHistoricalAlerts(entries []cloudLogEntry, labelMatchers []labelMatcher) []HistoricalAlert {

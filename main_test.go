@@ -1,7 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -145,6 +152,129 @@ func TestBuildHistoryFilterAddsTimeWindow(t *testing.T) {
 		if !strings.Contains(filter, want) {
 			t.Fatalf("expected filter to contain %q, got %q", want, filter)
 		}
+	}
+}
+
+func TestLogFetchedHistoricalAlertsIncludesProjectID(t *testing.T) {
+	var buf bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(previousLogger)
+	})
+
+	cfg := Config{
+		History: HistoryConfig{
+			Window: Duration{Duration: 24 * time.Hour},
+		},
+	}
+	alerts := []HistoricalAlert{
+		{Count: 2},
+		{Count: 1},
+	}
+
+	logFetchedHistoricalAlerts("bethink-prod", alerts, cfg, nil)
+
+	var record map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &record); err != nil {
+		t.Fatalf("decode log record: %v", err)
+	}
+	if record["project_id"] != "bethink-prod" {
+		t.Fatalf("unexpected project_id: %#v", record["project_id"])
+	}
+}
+
+func TestFetchHistoricalAlertEntriesForProjectUsesSingleProjectAndKeepsPartialEntries(t *testing.T) {
+	var requests []cloudLoggingListRequest
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			var requestBody cloudLoggingListRequest
+			if err := json.NewDecoder(req.Body).Decode(&requestBody); err != nil {
+				t.Fatalf("decode request body: %v", err)
+			}
+			requests = append(requests, requestBody)
+
+			if requestBody.PageToken == "" {
+				body := `{"entries":[{"insertId":"first","logName":"projects/bethink-prod/logs/stdout"}],"nextPageToken":"next"}`
+				return stringResponse(http.StatusOK, body), nil
+			}
+
+			return stringResponse(http.StatusForbidden, `{"error":"denied"}`), nil
+		}),
+	}
+	cfg := Config{
+		History: HistoryConfig{
+			PageSize: 1000,
+		},
+	}
+
+	entries, err := fetchHistoricalAlertEntriesForProject(context.Background(), client, "token", cfg, "bethink-prod", `timestamp >= "2026-04-25T00:00:00Z"`)
+
+	if err == nil {
+		t.Fatal("expected second page error")
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected partial entries from first page, got %d", len(entries))
+	}
+	if len(requests) != 2 {
+		t.Fatalf("expected 2 requests, got %d", len(requests))
+	}
+	for _, requestBody := range requests {
+		if len(requestBody.ResourceNames) != 1 || requestBody.ResourceNames[0] != "projects/bethink-prod" {
+			t.Fatalf("unexpected resource names: %#v", requestBody.ResourceNames)
+		}
+	}
+}
+
+func TestFetchHistoricalAlertEntriesForProjectsRunsConcurrently(t *testing.T) {
+	var mu sync.Mutex
+	activeRequests := 0
+	maxActiveRequests := 0
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			mu.Lock()
+			activeRequests++
+			maxActiveRequests = max(maxActiveRequests, activeRequests)
+			mu.Unlock()
+
+			time.Sleep(25 * time.Millisecond)
+
+			mu.Lock()
+			activeRequests--
+			mu.Unlock()
+
+			return stringResponse(http.StatusOK, `{}`), nil
+		}),
+	}
+	cfg := Config{
+		History: HistoryConfig{
+			ProjectIDs: []string{"bethink-prod", "bethink-dev", "bethink-stage"},
+			PageSize:   1000,
+			Window:     Duration{Duration: 24 * time.Hour},
+		},
+	}
+
+	_, errs := fetchHistoricalAlertEntriesForProjects(context.Background(), client, "token", cfg, `timestamp >= "2026-04-25T00:00:00Z"`, nil)
+
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors, got %v", errs)
+	}
+	if maxActiveRequests < 2 {
+		t.Fatalf("expected concurrent project requests, max active requests was %d", maxActiveRequests)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+func stringResponse(statusCode int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: statusCode,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     make(http.Header),
 	}
 }
 
