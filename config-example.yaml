@@ -1,66 +1,83 @@
 # Example configuration for alertmanager-digest.
-#
-# Required:
-# - at least one Alertmanager in alertmanagers
-# - slackWebhookUrl here or SLACK_WEBHOOK_URL in the environment
 
+# Default: "Alertmanager daily digest".
 title: "Daily Alertmanager digest"
 
-# Prefer SLACK_WEBHOOK_URL for secrets in production.
-# slackWebhookUrl: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+# Default: false.
+# When true, prints the Slack payload JSON instead of sending it.
+dryRun: false
 
+# Required unless dryRun=true or SLACK_WEBHOOK_URL env var is set.
+# Prefer SLACK_WEBHOOK_URL for secrets in production.
+slackWebhookUrl: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+
+# Stage-specific timeouts.
+# Defaults: alertmanager=10s, history=30s, slack=10s.
+timeouts:
+  alertmanager: 10s
+  history: 30s
+  slack: 10s
+
+# Required: at least one Alertmanager.
 alertmanagers:
 - name: prod
   url: https://alertmanager.example.com
 
-# Optional label filters passed to Alertmanager API and applied to historical
-# alerts decoded from Cloud Logging. Supported historical matcher operators:
-# =, !=, =~, !~.
-# filters:
-# - severity=~"warning|critical"
+# Optional label filters.
+# Passed to Alertmanager API and applied to historical alerts decoded from
+# Cloud Logging. Historical matcher operators: =, !=, =~, !~.
+# Default: [].
+filters:
+- severity=~"warning|critical"
 
-# Labels shown next to each alert. Defaults to:
-# severity, alertname, cluster, namespace.
-# Use ["*"] to show all labels.
+# Labels shown next to each alert.
+# Default: severity, alertname, cluster, namespace.
+# Use ["*"] to show all labels except alertname, which is shown as the title.
 displayLabels:
 - severity
 - alertname
 - cluster
 - namespace
 - team
+
 # Labels hidden from Slack output after displayLabels is applied.
-# excludeLabels:
-# - prometheus
-# - prometheus_namespace
+# Default: [].
+excludeLabels:
+- prometheus
+- prometheus_namespace
 
 slack:
-  # Send a Slack message even when there are no active alerts.
-  sendEmptyMessage: true
-  # Defaults to 40.
+  # Send a Slack message even when there are no active or historical alerts.
+  # Default: false.
+  sendEmptyMessage: false
+  # Maximum active alerts shown in Slack.
+  # Default: 40.
   maxAlerts: 40
 
-# Optional Cloud Logging lookup for alerts sent by alertmanager-webhook-logger.
-# Uses Application Default Credentials with logging.read scope.
+# Cloud Logging lookup for alerts sent by alertmanager-webhook-logger.
 history:
-  enabled: true
-  # Defaults to 24h. Can be overridden with --history-window.
+  # Default: false.
+  enabled: false
+  # Historical lookup window.
+  # Default: 24h. Can be overridden with --history-window.
   window: 24h
-  # Defaults to GOOGLE_CLOUD_PROJECT or GCLOUD_PROJECT when omitted.
+  # Google Cloud project IDs queried via Cloud Logging entries.list.
+  # Default: GOOGLE_CLOUD_PROJECT or GCLOUD_PROJECT env var when omitted.
+  # Required when history.enabled=true and neither env var is set.
   projectIds:
   - myproject
-  # Defaults to alertmanager-webhook-logger container logs with message "Events received".
-  # filter: 'resource.type="k8s_container" AND resource.labels.container_name="alertmanager-webhook-logger" AND jsonPayload.message="Events received"'
-  # Defaults to slack.maxAlerts.
+  # Cloud Logging filter used before the time-window clause is added.
+  # Default:
+  # resource.type="k8s_container" AND resource.labels.container_name="alertmanager-webhook-logger" AND jsonPayload.message="Events received"
+  filter: 'resource.type="k8s_container" AND resource.labels.container_name="alertmanager-webhook-logger" AND jsonPayload.message="Events received"'
+  # Maximum historical alert groups shown in Slack.
+  # Default: slack.maxAlerts.
   maxAlerts: 40
-  # Defaults to 1000.
+  # Cloud Logging entries.list page size.
+  # Default: 1000.
   pageSize: 1000
 
-# Optional HTTP settings.
-# timeout is a backward-compatible default for all stage-specific timeouts below.
-# timeout: 10s
-# timeouts:
-#   alertmanager: 10s
-#   history: 30s
-#   slack: 10s
-# http:
-#   insecureSkipVerify: false
+http:
+  # Disable TLS certificate verification for Alertmanager/Slack/GCP requests.
+  # Default: false.
+  insecureSkipVerify: false

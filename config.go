@@ -14,7 +14,6 @@ type Config struct {
 	SlackWebhookURL string           `yaml:"slackWebhookUrl"`
 	Title           string           `yaml:"title"`
 	DryRun          bool             `yaml:"dryRun"`
-	Timeout         Duration         `yaml:"timeout"`
 	Timeouts        TimeoutsConfig   `yaml:"timeouts"`
 	Alertmanagers   []Alertmanager   `yaml:"alertmanagers"`
 	Filters         []string         `yaml:"filters"`
@@ -64,17 +63,14 @@ func loadConfig(path string) (Config, error) {
 	if cfg.Title == "" {
 		cfg.Title = "Alertmanager daily digest"
 	}
-	if cfg.Timeout.Duration == 0 {
-		cfg.Timeout.Duration = 10 * time.Second
-	}
 	if cfg.Timeouts.Alertmanager.Duration == 0 {
-		cfg.Timeouts.Alertmanager.Duration = cfg.Timeout.Duration
+		cfg.Timeouts.Alertmanager.Duration = 10 * time.Second
 	}
 	if cfg.Timeouts.History.Duration == 0 {
-		cfg.Timeouts.History.Duration = cfg.Timeout.Duration
+		cfg.Timeouts.History.Duration = 30 * time.Second
 	}
 	if cfg.Timeouts.Slack.Duration == 0 {
-		cfg.Timeouts.Slack.Duration = cfg.Timeout.Duration
+		cfg.Timeouts.Slack.Duration = 10 * time.Second
 	}
 	if cfg.Slack.MaxAlerts == 0 {
 		cfg.Slack.MaxAlerts = 40

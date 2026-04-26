@@ -30,10 +30,9 @@ displayLabels:
 	}
 }
 
-func TestLoadConfigDefaultsStageTimeoutsFromGlobalTimeout(t *testing.T) {
+func TestLoadConfigDefaultsStageTimeouts(t *testing.T) {
 	configPath := writeTestConfig(t, `
 dryRun: true
-timeout: 15s
 alertmanagers:
 - name: prod
   url: https://alertmanager.example.com
@@ -44,21 +43,20 @@ alertmanagers:
 		t.Fatalf("load config: %v", err)
 	}
 
-	for name, got := range map[string]time.Duration{
-		"alertmanager": cfg.Timeouts.Alertmanager.Duration,
-		"history":      cfg.Timeouts.History.Duration,
-		"slack":        cfg.Timeouts.Slack.Duration,
-	} {
-		if got != 15*time.Second {
-			t.Fatalf("expected %s timeout 15s, got %s", name, got)
-		}
+	if cfg.Timeouts.Alertmanager.Duration != 10*time.Second {
+		t.Fatalf("expected alertmanager timeout 10s, got %s", cfg.Timeouts.Alertmanager.Duration)
+	}
+	if cfg.Timeouts.History.Duration != 30*time.Second {
+		t.Fatalf("expected history timeout 30s, got %s", cfg.Timeouts.History.Duration)
+	}
+	if cfg.Timeouts.Slack.Duration != 10*time.Second {
+		t.Fatalf("expected slack timeout 10s, got %s", cfg.Timeouts.Slack.Duration)
 	}
 }
 
 func TestLoadConfigSupportsStageTimeoutOverrides(t *testing.T) {
 	configPath := writeTestConfig(t, `
 dryRun: true
-timeout: 10s
 timeouts:
   alertmanager: 5s
   history: 30s
