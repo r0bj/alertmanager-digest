@@ -190,6 +190,48 @@ func TestAppendHistoryBlocksDoesNotUseInlineCodeForWindow(t *testing.T) {
 	}
 }
 
+func TestSlackTruncationSummaryDoesNotUseInlineCode(t *testing.T) {
+	cfg := Config{
+		Title: "Daily Alertmanager digest",
+		Slack: SlackConfig{
+			MaxAlerts: 1,
+		},
+		History: HistoryConfig{
+			Enabled:   true,
+			Window:    Duration{Duration: 24 * time.Hour},
+			MaxAlerts: 1,
+		},
+	}
+	alerts := []Alert{
+		{Labels: map[string]string{"alertname": "ActiveOne"}, StartsAt: time.Now()},
+		{Labels: map[string]string{"alertname": "ActiveTwo"}, StartsAt: time.Now()},
+	}
+	historicalAlerts := []HistoricalAlert{
+		{Labels: map[string]string{"alertname": "HistoricalOne"}, Count: 1, LastSeen: time.Now()},
+		{Labels: map[string]string{"alertname": "HistoricalTwo"}, Count: 1, LastSeen: time.Now()},
+	}
+
+	payload := buildSlackPayload(cfg, alerts, historicalAlerts, nil, nil)
+
+	var summaries []string
+	for _, block := range payload.Blocks {
+		if block.Text != nil && strings.Contains(block.Text.Text, "Showing first") {
+			summaries = append(summaries, block.Text.Text)
+		}
+	}
+	if len(summaries) != 2 {
+		t.Fatalf("expected active and historical truncation summaries, got %#v", summaries)
+	}
+	for _, summary := range summaries {
+		if !strings.Contains(summary, "Showing first 1, truncated 1.") {
+			t.Fatalf("expected plain truncation summary, got %q", summary)
+		}
+		if strings.Contains(summary, "`1`") {
+			t.Fatalf("expected no inline-code formatting in truncation summary, got %q", summary)
+		}
+	}
+}
+
 func TestBuildSlackPayloadUsesTopLevelBlocks(t *testing.T) {
 	cfg := Config{
 		Title: "Daily Alertmanager digest",

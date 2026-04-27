@@ -58,7 +58,7 @@ func buildSlackPayload(cfg Config, alerts []Alert, historicalAlerts []Historical
 
 		summary := fmt.Sprintf("*Active alerts: %d*", len(alerts))
 		if truncated > 0 {
-			summary += fmt.Sprintf("\nShowing first `%d`, truncated `%d`.", len(visibleAlerts), truncated)
+			summary += fmt.Sprintf("\nShowing first %d, truncated %d.", len(visibleAlerts), truncated)
 		}
 
 		blocks = append(blocks, mrkdwnBlock(summary))
@@ -109,7 +109,7 @@ func appendHistoryBlocks(blocks []SlackBlock, cfg Config, historicalAlerts []His
 		totalOccurrences,
 	)
 	if truncated > 0 {
-		summary += fmt.Sprintf("\nShowing first `%d`, truncated `%d`.", len(visibleAlerts), truncated)
+		summary += fmt.Sprintf("\nShowing first %d, truncated %d.", len(visibleAlerts), truncated)
 	}
 
 	blocks = append(blocks, mrkdwnBlock(summary))
