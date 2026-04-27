@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -17,7 +19,7 @@ type Config struct {
 	Timeouts        TimeoutsConfig   `yaml:"timeouts"`
 	Alertmanagers   []Alertmanager   `yaml:"alertmanagers"`
 	Filters         []string         `yaml:"filters"`
-	DisplayLabels   []string         `yaml:"displayLabels"`
+	GroupBy         []string         `yaml:"groupBy"`
 	ExcludeLabels   []string         `yaml:"excludeLabels"`
 	Slack           SlackConfig      `yaml:"slack"`
 	HTTP            HTTPClientConfig `yaml:"http"`
@@ -91,9 +93,6 @@ func loadConfig(path string) (Config, error) {
 			cfg.History.ProjectIDs = []string{projectID}
 		}
 	}
-	if len(cfg.DisplayLabels) == 0 {
-		cfg.DisplayLabels = []string{"severity", "alertname", "cluster", "namespace"}
-	}
 
 	if envWebhook := os.Getenv("SLACK_WEBHOOK_URL"); envWebhook != "" {
 		cfg.SlackWebhookURL = envWebhook
@@ -119,6 +118,12 @@ func validateConfig(cfg Config) error {
 	}
 	if cfg.Timeouts.Slack.Duration <= 0 {
 		return errors.New("timeouts.slack must be greater than 0")
+	}
+	if containsLabel(cfg.GroupBy, "*") {
+		return errors.New(`groupBy no longer supports "*"; omit groupBy to group by all labels`)
+	}
+	if conflicts := groupByExcludeLabelConflicts(cfg.GroupBy, cfg.ExcludeLabels); len(conflicts) > 0 {
+		return fmt.Errorf("excludeLabels cannot contain labels from groupBy: %s", strings.Join(conflicts, ", "))
 	}
 
 	if cfg.History.Enabled {
@@ -146,4 +151,40 @@ func validateConfig(cfg Config) error {
 	}
 
 	return nil
+}
+
+func groupByExcludeLabelConflicts(groupBy []string, excludeLabels []string) []string {
+	if len(groupBy) == 0 {
+		return nil
+	}
+
+	grouped := make(map[string]bool, len(groupBy))
+	for _, label := range groupBy {
+		if label != "" {
+			grouped[label] = true
+		}
+	}
+
+	conflicts := make([]string, 0)
+	seen := map[string]bool{}
+	for _, label := range excludeLabels {
+		if label == "" || !grouped[label] || seen[label] {
+			continue
+		}
+		conflicts = append(conflicts, label)
+		seen[label] = true
+	}
+	sort.Strings(conflicts)
+
+	return conflicts
+}
+
+func containsLabel(labels []string, want string) bool {
+	for _, label := range labels {
+		if label == want {
+			return true
+		}
+	}
+
+	return false
 }

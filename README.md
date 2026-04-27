@@ -25,6 +25,10 @@ filter is:
 resource.type="k8s_container" AND resource.labels.container_name="alertmanager-webhook-logger" AND jsonPayload.message="Events received"
 ```
 
+Historical alerts are grouped by the top-level `groupBy` labels before they are
+shown in Slack. When `groupBy` is omitted or empty, alerts are grouped by all
+labels.
+
 The time window defaults to `24h` and can be overridden per run:
 
 ```sh

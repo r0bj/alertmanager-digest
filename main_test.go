@@ -66,14 +66,14 @@ func TestAggregateHistoricalAlertsCountsByFingerprint(t *testing.T) {
 		},
 	}
 
-	alerts := aggregateHistoricalAlerts(entries, nil)
+	alerts := aggregateHistoricalAlerts(entries, nil, nil)
 	sortHistoricalAlerts(alerts)
 
 	if len(alerts) != 2 {
 		t.Fatalf("expected 2 unique alerts, got %d", len(alerts))
 	}
-	if alerts[0].Fingerprint != "abc" {
-		t.Fatalf("expected alert abc first by count, got %q", alerts[0].Fingerprint)
+	if alerts[0].Labels["alertname"] != "HighLatency" {
+		t.Fatalf("expected HighLatency alert first by count, got %#v", alerts[0].Labels)
 	}
 	if alerts[0].Count != 2 {
 		t.Fatalf("expected count 2, got %d", alerts[0].Count)
@@ -128,13 +128,58 @@ func TestAggregateHistoricalAlertsAppliesLabelFilters(t *testing.T) {
 		t.Fatalf("parse matchers: %v", err)
 	}
 
-	alerts := aggregateHistoricalAlerts(entries, matchers)
+	alerts := aggregateHistoricalAlerts(entries, matchers, nil)
 
 	if len(alerts) != 1 {
 		t.Fatalf("expected 1 historical alert after filtering, got %d", len(alerts))
 	}
-	if alerts[0].Fingerprint != "warning" {
-		t.Fatalf("expected warning alert, got %q", alerts[0].Fingerprint)
+	if alerts[0].Labels["alertname"] != "HighLatency" {
+		t.Fatalf("expected warning alert, got %#v", alerts[0].Labels)
+	}
+}
+
+func TestAggregateHistoricalAlertsGroupsByConfiguredLabels(t *testing.T) {
+	entries := []cloudLogEntry{
+		{
+			Timestamp: time.Date(2026, 4, 25, 10, 0, 0, 0, time.UTC),
+			JSONPayload: webhookLoggerPayload{
+				Alerts: webhookPayload{
+					Alerts: []webhookAlert{
+						{
+							Fingerprint: "one",
+							Labels: map[string]string{
+								"alertname": "PlatformWorkerLastHeartbeatTooOld",
+								"severity":  "critical",
+								"cluster":   "gke-prod",
+								"namespace": "lek",
+								"team":      "lms",
+								"pod":       "worker-1",
+							},
+						},
+						{
+							Fingerprint: "two",
+							Labels: map[string]string{
+								"alertname": "PlatformWorkerLastHeartbeatTooOld",
+								"severity":  "critical",
+								"cluster":   "gke-prod",
+								"namespace": "lek",
+								"team":      "lms",
+								"pod":       "worker-2",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	alerts := aggregateHistoricalAlerts(entries, nil, []string{"severity", "alertname", "cluster", "namespace", "team"})
+
+	if len(alerts) != 1 {
+		t.Fatalf("expected alerts to be grouped by configured labels, got %d", len(alerts))
+	}
+	if alerts[0].Count != 2 {
+		t.Fatalf("expected grouped count 2, got %d", alerts[0].Count)
 	}
 }
 

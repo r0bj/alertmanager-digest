@@ -64,7 +64,7 @@ func buildSlackPayload(cfg Config, alerts []Alert, historicalAlerts []Historical
 		blocks = append(blocks, mrkdwnBlock(summary))
 
 		for _, alert := range visibleAlerts {
-			blocks = append(blocks, mrkdwnBlock(formatAlert(alert, cfg.DisplayLabels, cfg.ExcludeLabels)))
+			blocks = append(blocks, mrkdwnBlock(formatAlert(alert, cfg.GroupBy, cfg.ExcludeLabels)))
 		}
 	}
 
@@ -103,7 +103,7 @@ func appendHistoryBlocks(blocks []SlackBlock, cfg Config, historicalAlerts []His
 
 	totalOccurrences := countHistoricalOccurrences(historicalAlerts)
 	summary := fmt.Sprintf(
-		"*Alerts sent in the last %s: %d unique, %d occurrences*",
+		"*Alerts sent in the last %s: %d groups, %d occurrences*",
 		historyWindow,
 		len(historicalAlerts),
 		totalOccurrences,
@@ -114,7 +114,7 @@ func appendHistoryBlocks(blocks []SlackBlock, cfg Config, historicalAlerts []His
 
 	blocks = append(blocks, mrkdwnBlock(summary))
 	for _, alert := range visibleAlerts {
-		blocks = append(blocks, mrkdwnBlock(formatHistoricalAlert(alert, cfg.DisplayLabels, cfg.ExcludeLabels)))
+		blocks = append(blocks, mrkdwnBlock(formatHistoricalAlert(alert, cfg.GroupBy, cfg.ExcludeLabels)))
 	}
 
 	return blocks
@@ -159,9 +159,9 @@ func appendHistoryErrorBlocks(blocks []SlackBlock, errs []error) []SlackBlock {
 	return append(blocks, mrkdwnBlock(strings.Join(lines, "\n")))
 }
 
-func formatAlert(alert Alert, displayLabels []string, excludeLabels []string) string {
+func formatAlert(alert Alert, groupBy []string, excludeLabels []string) string {
 	alertname := value(alert.Labels, "alertname", "unknown")
-	labelFields := formatLabelFields(alert.Labels, displayLabels, excludeLabels)
+	labelFields := formatLabelFields(alert.Labels, groupBy, excludeLabels)
 	activeSince := fmt.Sprintf("active for %s", humanDurationSince(alert.StartsAt))
 
 	line := fmt.Sprintf(
@@ -179,9 +179,9 @@ func formatAlert(alert Alert, displayLabels []string, excludeLabels []string) st
 	return line
 }
 
-func formatHistoricalAlert(alert HistoricalAlert, displayLabels []string, excludeLabels []string) string {
+func formatHistoricalAlert(alert HistoricalAlert, groupBy []string, excludeLabels []string) string {
 	alertname := value(alert.Labels, "alertname", "unknown")
-	labelFields := formatLabelFields(alert.Labels, displayLabels, excludeLabels)
+	labelFields := formatLabelFields(alert.Labels, groupBy, excludeLabels)
 	line := fmt.Sprintf(
 		"• *%s* (%s) occurrences: %d, last seen %s ago",
 		escapeSlack(alertname),
@@ -204,16 +204,16 @@ func formatHistoricalAlert(alert HistoricalAlert, displayLabels []string, exclud
 	return line
 }
 
-func formatLabelFields(labels map[string]string, displayLabels []string, excludeLabels []string) []string {
+func formatLabelFields(labels map[string]string, groupBy []string, excludeLabels []string) []string {
 	excluded := excludedLabelSet(excludeLabels)
 	excluded["alertname"] = true
 
-	if showsAllLabels(displayLabels) {
+	if len(groupBy) == 0 {
 		return formatAllLabelFields(labels, excluded)
 	}
 
 	var fields []string
-	for _, label := range displayLabels {
+	for _, label := range groupBy {
 		if excluded[label] {
 			continue
 		}
@@ -235,16 +235,6 @@ func excludedLabelSet(excludeLabels []string) map[string]bool {
 	}
 
 	return excluded
-}
-
-func showsAllLabels(displayLabels []string) bool {
-	for _, label := range displayLabels {
-		if label == "*" {
-			return true
-		}
-	}
-
-	return false
 }
 
 func formatAllLabelFields(labels map[string]string, excluded map[string]bool) []string {

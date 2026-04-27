@@ -76,7 +76,7 @@ func TestFormatAlertShowsAllLabels(t *testing.T) {
 		StartsAt: time.Now(),
 	}
 
-	line := formatAlert(alert, []string{"*"}, nil)
+	line := formatAlert(alert, nil, nil)
 
 	for _, want := range []string{
 		"cluster=c1",
@@ -93,7 +93,7 @@ func TestFormatAlertShowsAllLabels(t *testing.T) {
 	}
 }
 
-func TestFormatAlertShowsConfiguredDisplayLabels(t *testing.T) {
+func TestFormatAlertShowsConfiguredGroupByLabels(t *testing.T) {
 	alert := Alert{
 		Labels: map[string]string{
 			"alertname":   "HighLatency",
@@ -127,7 +127,7 @@ func TestFormatAlertExcludesLabelsFromAllLabels(t *testing.T) {
 		StartsAt: time.Now(),
 	}
 
-	line := formatAlert(alert, []string{"*"}, []string{"environment", "team"})
+	line := formatAlert(alert, nil, []string{"environment", "team"})
 
 	if !strings.Contains(line, "cluster=c1") || !strings.Contains(line, "severity=warning") {
 		t.Fatalf("expected non-excluded labels, got %q", line)
@@ -137,7 +137,7 @@ func TestFormatAlertExcludesLabelsFromAllLabels(t *testing.T) {
 	}
 }
 
-func TestFormatAlertExcludesConfiguredDisplayLabels(t *testing.T) {
+func TestFormatAlertExcludesConfiguredGroupByLabels(t *testing.T) {
 	alert := Alert{
 		Labels: map[string]string{
 			"alertname": "HighLatency",

@@ -30,17 +30,18 @@ alertmanagers:
 filters:
 - severity=~"warning|critical"
 
-# Labels shown next to each alert.
-# Default: severity, alertname, cluster, namespace.
-# Use ["*"] to show all labels except alertname, which is shown as the title.
-displayLabels:
+# Labels used to group historical alerts and shown next to each alert.
+# Default when omitted or empty: group by all labels and show all labels
+# except alertname, which is shown as the title.
+groupBy:
 - severity
-- alertname
 - cluster
 - namespace
 - team
 
-# Labels hidden from Slack output after displayLabels is applied.
+# Labels hidden from Slack output after groupBy is applied.
+# Cannot include labels explicitly listed in groupBy. When groupBy is omitted
+# or empty, excludeLabels can hide labels from the all-label output.
 # Default: [].
 excludeLabels:
 - prometheus

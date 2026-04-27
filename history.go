@@ -103,7 +103,7 @@ func fetchHistoricalAlerts(ctx context.Context, client *http.Client, cfg Config,
 
 	entries, errs := fetchHistoricalAlertEntriesForProjects(ctx, client, token.AccessToken, cfg, filter, labelMatchers)
 
-	alerts := aggregateHistoricalAlerts(entries, labelMatchers)
+	alerts := aggregateHistoricalAlerts(entries, labelMatchers, cfg.GroupBy)
 	sortHistoricalAlerts(alerts)
 
 	return alerts, errs
@@ -148,7 +148,7 @@ func fetchHistoricalAlertEntriesForProjects(ctx context.Context, client *http.Cl
 	for i, projectID := range cfg.History.ProjectIDs {
 		projectEntries := results[i].entries
 		err := results[i].err
-		projectAlerts := aggregateHistoricalAlerts(projectEntries, labelMatchers)
+		projectAlerts := aggregateHistoricalAlerts(projectEntries, labelMatchers, cfg.GroupBy)
 		sortHistoricalAlerts(projectAlerts)
 
 		if err != nil {
@@ -260,7 +260,7 @@ func cloudLoggingResourceName(projectID string) string {
 	return "projects/" + projectID
 }
 
-func aggregateHistoricalAlerts(entries []cloudLogEntry, labelMatchers []labelMatcher) []HistoricalAlert {
+func aggregateHistoricalAlerts(entries []cloudLogEntry, labelMatchers []labelMatcher, groupBy []string) []HistoricalAlert {
 	seen := map[string]HistoricalAlert{}
 
 	for _, entry := range entries {
@@ -273,10 +273,7 @@ func aggregateHistoricalAlerts(entries []cloudLogEntry, labelMatchers []labelMat
 				continue
 			}
 
-			key := webhookAlert.Fingerprint
-			if key == "" {
-				key = labelsFingerprint(labels)
-			}
+			key := historicalAlertGroupKey(labels, groupBy)
 			if key == "" {
 				continue
 			}
@@ -324,6 +321,25 @@ func aggregateHistoricalAlerts(entries []cloudLogEntry, labelMatchers []labelMat
 	}
 
 	return result
+}
+
+func historicalAlertGroupKey(labels map[string]string, groupBy []string) string {
+	if len(groupBy) == 0 {
+		return labelsFingerprint(labels)
+	}
+
+	groupLabels := make(map[string]string, len(groupBy))
+	for _, label := range groupBy {
+		if val := labels[label]; val != "" {
+			groupLabels[label] = val
+		}
+	}
+
+	if len(groupLabels) > 0 {
+		return labelsFingerprint(groupLabels)
+	}
+
+	return labelsFingerprint(labels)
 }
 
 func cloudLogEntryURL(entry cloudLogEntry) string {
