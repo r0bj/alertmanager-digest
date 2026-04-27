@@ -91,8 +91,14 @@ func TestAggregateHistoricalAlertsCountsUniqueAlertInstances(t *testing.T) {
 	if !strings.Contains(highLatency.LogsURL, "console.cloud.google.com/logs/query") {
 		t.Fatalf("expected GCP Logs URL, got %q", highLatency.LogsURL)
 	}
-	if !strings.Contains(highLatency.LogsURL, "last-insert-id") {
-		t.Fatalf("expected latest log entry link, got %q", highLatency.LogsURL)
+	if !strings.Contains(highLatency.LogsURL, "jsonPayload.alerts.alerts.labels.alertname%3D%22HighLatency%22") {
+		t.Fatalf("expected grouped alertname log query, got %q", highLatency.LogsURL)
+	}
+	if !strings.Contains(highLatency.LogsURL, "jsonPayload.alerts.alerts.labels.cluster%3D%22c1%22") {
+		t.Fatalf("expected grouped cluster log query, got %q", highLatency.LogsURL)
+	}
+	if strings.Contains(highLatency.LogsURL, "last-insert-id") {
+		t.Fatalf("expected group log query, got single log entry link %q", highLatency.LogsURL)
 	}
 	if !strings.Contains(highLatency.LogsURL, "project=bethink-prod") {
 		t.Fatalf("expected project in GCP Logs URL, got %q", highLatency.LogsURL)
@@ -401,6 +407,35 @@ func TestCloudLogEntryURL(t *testing.T) {
 		"insertId%3D%22abc123%22",
 		"logName%3D%22projects%2Fbethink-prod%2Flogs%2Fstdout%22",
 		"timestamp%3D%222026-04-25T19%3A33%3A07Z%22",
+		"project=bethink-prod",
+	} {
+		if !strings.Contains(logsURL, want) {
+			t.Fatalf("expected URL to contain %q, got %q", want, logsURL)
+		}
+	}
+}
+
+func TestCloudLogGroupURL(t *testing.T) {
+	logsURL := cloudLogGroupURL(
+		"projects/bethink-prod/logs/stdout",
+		map[string]string{
+			"alertname":              "PodContainerRestartDetected",
+			"app.kubernetes.io/name": "worker",
+			"namespace":              "lek",
+		},
+		time.Date(2026, 4, 25, 19, 33, 7, 0, time.UTC),
+		time.Date(2026, 4, 25, 20, 33, 7, 0, time.UTC),
+	)
+
+	for _, want := range []string{
+		"https://console.cloud.google.com/logs/query;query=",
+		"jsonPayload.message%3D%22Events%20received%22",
+		"logName%3D%22projects%2Fbethink-prod%2Flogs%2Fstdout%22",
+		"timestamp%20%3E%3D%20%222026-04-25T19%3A33%3A07Z%22",
+		"timestamp%20%3C%3D%20%222026-04-25T20%3A33%3A07Z%22",
+		"jsonPayload.alerts.alerts.labels.alertname%3D%22PodContainerRestartDetected%22",
+		"jsonPayload.alerts.alerts.labels.%22app.kubernetes.io%2Fname%22%3D%22worker%22",
+		"jsonPayload.alerts.alerts.labels.namespace%3D%22lek%22",
 		"project=bethink-prod",
 	} {
 		if !strings.Contains(logsURL, want) {

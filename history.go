@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,12 +31,14 @@ type HistoryConfig struct {
 
 type HistoricalAlert struct {
 	Labels       map[string]string
+	GroupLabels  map[string]string
 	Fingerprint  string
 	Count        int
 	FirstSeen    time.Time
 	LastSeen     time.Time
 	GeneratorURL string
 	LogsURL      string
+	LogName      string
 }
 
 type cloudLoggingListRequest struct {
@@ -274,7 +277,8 @@ func aggregateHistoricalAlerts(entries []cloudLogEntry, labelMatchers []labelMat
 				continue
 			}
 
-			key := historicalAlertGroupKey(labels, groupBy)
+			groupLabels := historicalAlertGroupLabels(labels, groupBy)
+			key := labelsFingerprint(groupLabels)
 			if key == "" {
 				continue
 			}
@@ -289,11 +293,13 @@ func aggregateHistoricalAlerts(entries []cloudLogEntry, labelMatchers []labelMat
 			if !exists {
 				seen[key] = HistoricalAlert{
 					Labels:       labels,
+					GroupLabels:  groupLabels,
 					Fingerprint:  key,
 					FirstSeen:    seenAt,
 					LastSeen:     seenAt,
 					GeneratorURL: webhookAlert.GeneratorURL,
 					LogsURL:      cloudLogEntryURL(entry),
+					LogName:      entry.LogName,
 				}
 				if _, instanceSeen := seenInstances[instanceKey]; !instanceSeen {
 					current := seen[key]
@@ -313,13 +319,10 @@ func aggregateHistoricalAlerts(entries []cloudLogEntry, labelMatchers []labelMat
 			}
 			if current.LastSeen.IsZero() || seenAt.After(current.LastSeen) {
 				current.LastSeen = seenAt
-				current.LogsURL = cloudLogEntryURL(entry)
+				current.LogName = entry.LogName
 			}
 			if current.GeneratorURL == "" {
 				current.GeneratorURL = webhookAlert.GeneratorURL
-			}
-			if current.LogsURL == "" {
-				current.LogsURL = cloudLogEntryURL(entry)
 			}
 			seen[key] = current
 		}
@@ -327,6 +330,7 @@ func aggregateHistoricalAlerts(entries []cloudLogEntry, labelMatchers []labelMat
 
 	result := make([]HistoricalAlert, 0, len(seen))
 	for _, alert := range seen {
+		alert.LogsURL = cloudLogGroupURL(alert.LogName, alert.GroupLabels, alert.FirstSeen, alert.LastSeen)
 		result = append(result, alert)
 	}
 
@@ -347,9 +351,9 @@ func historicalAlertInstanceKey(groupKey string, alert webhookAlert, labels map[
 	return groupKey + "\xff" + fingerprint + "\xff" + startsAt
 }
 
-func historicalAlertGroupKey(labels map[string]string, groupBy []string) string {
+func historicalAlertGroupLabels(labels map[string]string, groupBy []string) map[string]string {
 	if len(groupBy) == 0 {
-		return labelsFingerprint(labels)
+		return labels
 	}
 
 	groupLabels := make(map[string]string, len(groupBy))
@@ -360,14 +364,14 @@ func historicalAlertGroupKey(labels map[string]string, groupBy []string) string 
 	}
 
 	if len(groupLabels) > 0 {
-		return labelsFingerprint(groupLabels)
+		return groupLabels
 	}
 
-	return labelsFingerprint(labels)
+	return labels
 }
 
 func cloudLogEntryURL(entry cloudLogEntry) string {
-	projectID := cloudLogEntryProjectID(entry)
+	projectID := cloudLogNameProjectID(entry.LogName)
 	if projectID == "" || entry.InsertID == "" || entry.LogName == "" {
 		return ""
 	}
@@ -387,14 +391,73 @@ func cloudLogEntryURL(entry cloudLogEntry) string {
 	)
 }
 
-func cloudLogEntryProjectID(entry cloudLogEntry) string {
-	const prefix = "projects/"
-
-	if !strings.HasPrefix(entry.LogName, prefix) {
+func cloudLogGroupURL(logName string, labels map[string]string, start time.Time, end time.Time) string {
+	projectID := cloudLogNameProjectID(logName)
+	if projectID == "" || logName == "" || len(labels) == 0 {
 		return ""
 	}
 
-	rest := strings.TrimPrefix(entry.LogName, prefix)
+	var lines []string
+	lines = append(lines,
+		`jsonPayload.message="Events received"`,
+		fmt.Sprintf("logName=%q", logName),
+	)
+	if !start.IsZero() {
+		lines = append(lines, fmt.Sprintf("timestamp >= %q", start.UTC().Format(time.RFC3339Nano)))
+	}
+	if !end.IsZero() {
+		lines = append(lines, fmt.Sprintf("timestamp <= %q", end.UTC().Format(time.RFC3339Nano)))
+	}
+
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if labels[key] == "" {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf(
+			"jsonPayload.alerts.alerts.labels.%s=%q",
+			cloudLoggingFieldPathSegment(key),
+			labels[key],
+		))
+	}
+
+	escapedQuery := strings.ReplaceAll(url.QueryEscape(strings.Join(lines, "\n")), "+", "%20")
+
+	return fmt.Sprintf(
+		"https://console.cloud.google.com/logs/query;query=%s?project=%s",
+		escapedQuery,
+		url.QueryEscape(projectID),
+	)
+}
+
+func cloudLoggingFieldPathSegment(segment string) string {
+	if segment == "" {
+		return `""`
+	}
+
+	for i, r := range segment {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_' || (i > 0 && r >= '0' && r <= '9') {
+			continue
+		}
+
+		return strconv.Quote(segment)
+	}
+
+	return segment
+}
+
+func cloudLogNameProjectID(logName string) string {
+	const prefix = "projects/"
+
+	if !strings.HasPrefix(logName, prefix) {
+		return ""
+	}
+
+	rest := strings.TrimPrefix(logName, prefix)
 	projectID, _, found := strings.Cut(rest, "/")
 	if !found {
 		return ""
