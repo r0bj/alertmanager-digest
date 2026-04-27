@@ -13,9 +13,10 @@ import (
 	"time"
 )
 
-func TestAggregateHistoricalAlertsCountsByFingerprint(t *testing.T) {
+func TestAggregateHistoricalAlertsCountsUniqueAlertInstances(t *testing.T) {
 	firstSeen := time.Date(2026, 4, 25, 10, 0, 0, 0, time.UTC)
 	lastSeen := time.Date(2026, 4, 25, 11, 0, 0, 0, time.UTC)
+	startsAt := time.Date(2026, 4, 25, 9, 55, 0, 0, time.UTC)
 
 	entries := []cloudLogEntry{
 		{
@@ -27,6 +28,7 @@ func TestAggregateHistoricalAlertsCountsByFingerprint(t *testing.T) {
 					Alerts: []webhookAlert{
 						{
 							Fingerprint: "abc",
+							StartsAt:    startsAt,
 							Labels: map[string]string{
 								"alertname": "HighLatency",
 								"severity":  "warning",
@@ -46,6 +48,7 @@ func TestAggregateHistoricalAlertsCountsByFingerprint(t *testing.T) {
 					Alerts: []webhookAlert{
 						{
 							Fingerprint: "abc",
+							StartsAt:    startsAt,
 							Labels: map[string]string{
 								"alertname": "HighLatency",
 								"severity":  "warning",
@@ -72,26 +75,87 @@ func TestAggregateHistoricalAlertsCountsByFingerprint(t *testing.T) {
 	if len(alerts) != 2 {
 		t.Fatalf("expected 2 unique alerts, got %d", len(alerts))
 	}
-	if alerts[0].Labels["alertname"] != "HighLatency" {
-		t.Fatalf("expected HighLatency alert first by count, got %#v", alerts[0].Labels)
+	highLatency := findHistoricalAlertByName(alerts, "HighLatency")
+	if highLatency == nil {
+		t.Fatalf("expected HighLatency alert, got %#v", alerts)
+	}
+	if highLatency.Count != 1 {
+		t.Fatalf("expected repeated webhook alert to count once, got %d", highLatency.Count)
+	}
+	if !highLatency.FirstSeen.Equal(firstSeen) {
+		t.Fatalf("expected first seen %s, got %s", firstSeen, highLatency.FirstSeen)
+	}
+	if !highLatency.LastSeen.Equal(lastSeen) {
+		t.Fatalf("expected last seen %s, got %s", lastSeen, highLatency.LastSeen)
+	}
+	if !strings.Contains(highLatency.LogsURL, "console.cloud.google.com/logs/query") {
+		t.Fatalf("expected GCP Logs URL, got %q", highLatency.LogsURL)
+	}
+	if !strings.Contains(highLatency.LogsURL, "last-insert-id") {
+		t.Fatalf("expected latest log entry link, got %q", highLatency.LogsURL)
+	}
+	if !strings.Contains(highLatency.LogsURL, "project=bethink-prod") {
+		t.Fatalf("expected project in GCP Logs URL, got %q", highLatency.LogsURL)
+	}
+}
+
+func findHistoricalAlertByName(alerts []HistoricalAlert, alertname string) *HistoricalAlert {
+	for i := range alerts {
+		if alerts[i].Labels["alertname"] == alertname {
+			return &alerts[i]
+		}
+	}
+
+	return nil
+}
+
+func TestAggregateHistoricalAlertsCountsRefireWithSameFingerprint(t *testing.T) {
+	entries := []cloudLogEntry{
+		{
+			Timestamp: time.Date(2026, 4, 25, 10, 0, 0, 0, time.UTC),
+			JSONPayload: webhookLoggerPayload{
+				Alerts: webhookPayload{
+					Alerts: []webhookAlert{
+						{
+							Fingerprint: "abc",
+							StartsAt:    time.Date(2026, 4, 25, 9, 55, 0, 0, time.UTC),
+							Labels: map[string]string{
+								"alertname": "HighLatency",
+								"severity":  "warning",
+								"cluster":   "c1",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			Timestamp: time.Date(2026, 4, 25, 11, 0, 0, 0, time.UTC),
+			JSONPayload: webhookLoggerPayload{
+				Alerts: webhookPayload{
+					Alerts: []webhookAlert{
+						{
+							Fingerprint: "abc",
+							StartsAt:    time.Date(2026, 4, 25, 10, 55, 0, 0, time.UTC),
+							Labels: map[string]string{
+								"alertname": "HighLatency",
+								"severity":  "warning",
+								"cluster":   "c1",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	alerts := aggregateHistoricalAlerts(entries, nil, nil)
+
+	if len(alerts) != 1 {
+		t.Fatalf("expected same fingerprint to stay in one alert group, got %d", len(alerts))
 	}
 	if alerts[0].Count != 2 {
-		t.Fatalf("expected count 2, got %d", alerts[0].Count)
-	}
-	if !alerts[0].FirstSeen.Equal(firstSeen) {
-		t.Fatalf("expected first seen %s, got %s", firstSeen, alerts[0].FirstSeen)
-	}
-	if !alerts[0].LastSeen.Equal(lastSeen) {
-		t.Fatalf("expected last seen %s, got %s", lastSeen, alerts[0].LastSeen)
-	}
-	if !strings.Contains(alerts[0].LogsURL, "console.cloud.google.com/logs/query") {
-		t.Fatalf("expected GCP Logs URL, got %q", alerts[0].LogsURL)
-	}
-	if !strings.Contains(alerts[0].LogsURL, "last-insert-id") {
-		t.Fatalf("expected latest log entry link, got %q", alerts[0].LogsURL)
-	}
-	if !strings.Contains(alerts[0].LogsURL, "project=bethink-prod") {
-		t.Fatalf("expected project in GCP Logs URL, got %q", alerts[0].LogsURL)
+		t.Fatalf("expected same fingerprint with new startsAt to count as refire, got %d", alerts[0].Count)
 	}
 }
 

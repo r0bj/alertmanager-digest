@@ -27,7 +27,9 @@ resource.type="k8s_container" AND resource.labels.container_name="alertmanager-w
 
 Historical alerts are grouped by the top-level `groupBy` labels before they are
 shown in Slack. When `groupBy` is omitted or empty, alerts are grouped by all
-labels.
+labels. Occurrence counts are deduplicated by alert `fingerprint` and `startsAt`
+within each group, so repeated Alertmanager webhook batches do not inflate the
+count for alerts that are still firing.
 
 The time window defaults to `24h` and can be overridden per run:
 

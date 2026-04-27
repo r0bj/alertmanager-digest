@@ -262,6 +262,7 @@ func cloudLoggingResourceName(projectID string) string {
 
 func aggregateHistoricalAlerts(entries []cloudLogEntry, labelMatchers []labelMatcher, groupBy []string) []HistoricalAlert {
 	seen := map[string]HistoricalAlert{}
+	seenInstances := map[string]struct{}{}
 
 	for _, entry := range entries {
 		for _, webhookAlert := range entry.JSONPayload.Alerts.Alerts {
@@ -277,6 +278,7 @@ func aggregateHistoricalAlerts(entries []cloudLogEntry, labelMatchers []labelMat
 			if key == "" {
 				continue
 			}
+			instanceKey := historicalAlertInstanceKey(key, webhookAlert, labels)
 
 			seenAt := entry.Timestamp
 			if seenAt.IsZero() {
@@ -288,16 +290,24 @@ func aggregateHistoricalAlerts(entries []cloudLogEntry, labelMatchers []labelMat
 				seen[key] = HistoricalAlert{
 					Labels:       labels,
 					Fingerprint:  key,
-					Count:        1,
 					FirstSeen:    seenAt,
 					LastSeen:     seenAt,
 					GeneratorURL: webhookAlert.GeneratorURL,
 					LogsURL:      cloudLogEntryURL(entry),
 				}
+				if _, instanceSeen := seenInstances[instanceKey]; !instanceSeen {
+					current := seen[key]
+					current.Count = 1
+					seen[key] = current
+					seenInstances[instanceKey] = struct{}{}
+				}
 				continue
 			}
 
-			current.Count++
+			if _, instanceSeen := seenInstances[instanceKey]; !instanceSeen {
+				current.Count++
+				seenInstances[instanceKey] = struct{}{}
+			}
 			if current.FirstSeen.IsZero() || (!seenAt.IsZero() && seenAt.Before(current.FirstSeen)) {
 				current.FirstSeen = seenAt
 			}
@@ -321,6 +331,20 @@ func aggregateHistoricalAlerts(entries []cloudLogEntry, labelMatchers []labelMat
 	}
 
 	return result
+}
+
+func historicalAlertInstanceKey(groupKey string, alert webhookAlert, labels map[string]string) string {
+	fingerprint := alert.Fingerprint
+	if fingerprint == "" {
+		fingerprint = labelsFingerprint(labels)
+	}
+
+	startsAt := ""
+	if !alert.StartsAt.IsZero() {
+		startsAt = alert.StartsAt.UTC().Format(time.RFC3339Nano)
+	}
+
+	return groupKey + "\xff" + fingerprint + "\xff" + startsAt
 }
 
 func historicalAlertGroupKey(labels map[string]string, groupBy []string) string {

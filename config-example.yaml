@@ -32,7 +32,8 @@ filters:
 
 # Labels used to group historical alerts and shown next to each alert.
 # Default when omitted or empty: group by all labels and show all labels
-# except alertname, which is shown as the title.
+# except alertname, which is shown as the title. Counts are deduplicated by
+# alert fingerprint and startsAt within each group.
 groupBy:
 - severity
 - cluster
