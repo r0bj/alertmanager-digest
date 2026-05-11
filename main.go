@@ -69,7 +69,7 @@ func main() {
 		slog.Error("failed to fetch historical alerts", "error", err)
 	}
 
-	if len(alerts) == 0 && len(historicalAlerts) == 0 && len(fetchErrors) == 0 && len(historyErrors) == 0 && !cfg.Slack.SendEmptyMessage {
+	if !shouldSendSlackMessage(cfg, alerts, historicalAlerts, fetchErrors, historyErrors) {
 		slog.Info("no active or historical alerts; skipping Slack message")
 		return
 	}
@@ -91,4 +91,12 @@ func main() {
 	}
 
 	slog.Info("Slack message sent", "alerts", len(alerts), "historical_alerts", len(historicalAlerts), "fetch_errors", len(fetchErrors), "history_errors", len(historyErrors))
+}
+
+func shouldSendSlackMessage(cfg Config, alerts []Alert, historicalAlerts []HistoricalAlert, fetchErrors []error, historyErrors []error) bool {
+	return cfg.Slack.SendEmptyMessage ||
+		len(alerts) > 0 ||
+		len(historicalAlerts) > 0 ||
+		len(fetchErrors) > 0 ||
+		len(historyErrors) > 0
 }

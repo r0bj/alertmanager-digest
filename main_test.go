@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,54 @@ import (
 	"testing"
 	"time"
 )
+
+func TestShouldSendSlackMessageSkipsEmptyDigestByDefault(t *testing.T) {
+	if shouldSendSlackMessage(Config{}, nil, nil, nil, nil) {
+		t.Fatal("expected empty digest to be skipped by default")
+	}
+}
+
+func TestShouldSendSlackMessageAllowsEmptyDigestWhenConfigured(t *testing.T) {
+	cfg := Config{
+		Slack: SlackConfig{
+			SendEmptyMessage: true,
+		},
+	}
+
+	if !shouldSendSlackMessage(cfg, nil, nil, nil, nil) {
+		t.Fatal("expected configured empty digest to be sent")
+	}
+}
+
+func TestShouldSendSlackMessageSendsWhenThereIsContentOrErrors(t *testing.T) {
+	tests := map[string]struct {
+		alerts           []Alert
+		historicalAlerts []HistoricalAlert
+		fetchErrors      []error
+		historyErrors    []error
+	}{
+		"active alerts": {
+			alerts: []Alert{{Labels: map[string]string{"alertname": "HighLatency"}}},
+		},
+		"historical alerts": {
+			historicalAlerts: []HistoricalAlert{{Labels: map[string]string{"alertname": "HighLatency"}}},
+		},
+		"fetch errors": {
+			fetchErrors: []error{errors.New("alertmanager failed")},
+		},
+		"history errors": {
+			historyErrors: []error{errors.New("history failed")},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			if !shouldSendSlackMessage(Config{}, tc.alerts, tc.historicalAlerts, tc.fetchErrors, tc.historyErrors) {
+				t.Fatal("expected Slack message to be sent")
+			}
+		})
+	}
+}
 
 func TestAggregateHistoricalAlertsCountsUniqueAlertInstances(t *testing.T) {
 	firstSeen := time.Date(2026, 4, 25, 10, 0, 0, 0, time.UTC)

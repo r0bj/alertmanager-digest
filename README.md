@@ -36,3 +36,14 @@ The time window defaults to `24h` and can be overridden per run:
 ```sh
 alertmanager-digest --config config.yaml --history-window 12h
 ```
+
+## Empty digests
+
+By default, Slack delivery is skipped when there are no active alerts, no
+historical alerts, and no fetch errors. Set `slack.sendEmptyMessage` to `true`
+to still send the all-clear digest:
+
+```yaml
+slack:
+  sendEmptyMessage: true
+```
