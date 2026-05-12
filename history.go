@@ -30,15 +30,16 @@ type HistoryConfig struct {
 }
 
 type HistoricalAlert struct {
-	Labels       map[string]string
-	GroupLabels  map[string]string
-	Fingerprint  string
-	Count        int
-	FirstSeen    time.Time
-	LastSeen     time.Time
-	GeneratorURL string
-	LogsURL      string
-	LogName      string
+	Labels        map[string]string
+	GroupLabels   map[string]string
+	Fingerprint   string
+	Count         int
+	Notifications int
+	FirstSeen     time.Time
+	LastSeen      time.Time
+	GeneratorURL  string
+	LogsURL       string
+	LogName       string
 }
 
 type cloudLoggingListRequest struct {
@@ -292,14 +293,15 @@ func aggregateHistoricalAlerts(entries []cloudLogEntry, labelMatchers []labelMat
 			current, exists := seen[key]
 			if !exists {
 				seen[key] = HistoricalAlert{
-					Labels:       labels,
-					GroupLabels:  groupLabels,
-					Fingerprint:  key,
-					FirstSeen:    seenAt,
-					LastSeen:     seenAt,
-					GeneratorURL: webhookAlert.GeneratorURL,
-					LogsURL:      cloudLogEntryURL(entry),
-					LogName:      entry.LogName,
+					Labels:        labels,
+					GroupLabels:   groupLabels,
+					Fingerprint:   key,
+					Notifications: 1,
+					FirstSeen:     seenAt,
+					LastSeen:      seenAt,
+					GeneratorURL:  webhookAlert.GeneratorURL,
+					LogsURL:       cloudLogEntryURL(entry),
+					LogName:       entry.LogName,
 				}
 				if _, instanceSeen := seenInstances[instanceKey]; !instanceSeen {
 					current := seen[key]
@@ -310,6 +312,7 @@ func aggregateHistoricalAlerts(entries []cloudLogEntry, labelMatchers []labelMat
 				continue
 			}
 
+			current.Notifications++
 			if _, instanceSeen := seenInstances[instanceKey]; !instanceSeen {
 				current.Count++
 				seenInstances[instanceKey] = struct{}{}
@@ -498,6 +501,14 @@ func countHistoricalOccurrences(alerts []HistoricalAlert) int {
 	total := 0
 	for _, alert := range alerts {
 		total += alert.Count
+	}
+	return total
+}
+
+func countHistoricalNotifications(alerts []HistoricalAlert) int {
+	total := 0
+	for _, alert := range alerts {
+		total += alert.Notifications
 	}
 	return total
 }

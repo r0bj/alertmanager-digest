@@ -46,15 +46,16 @@ func TestFormatHistoricalAlertUsesRelativeLastSeen(t *testing.T) {
 			"severity":  "warning",
 			"cluster":   "c1",
 		},
-		Count:    3,
-		LastSeen: time.Now().Add(-2*time.Hour - 3*time.Minute),
-		LogsURL:  "https://console.cloud.google.com/logs/query;query=insertId%3D%22abc%22?project=bethink-prod",
+		Count:         3,
+		Notifications: 5,
+		LastSeen:      time.Now().Add(-2*time.Hour - 3*time.Minute),
+		LogsURL:       "https://console.cloud.google.com/logs/query;query=insertId%3D%22abc%22?project=bethink-prod",
 	}
 
 	line := formatHistoricalAlert(alert, []string{"severity", "alertname", "cluster"}, nil)
 
-	if !strings.Contains(line, "occurrences: 3, last seen 2h 3m") {
-		t.Fatalf("expected relative last seen duration, got %q", line)
+	if !strings.Contains(line, "occurrences: 3, notifications: 5, last notified 2h 3m") {
+		t.Fatalf("expected relative last notified duration, got %q", line)
 	}
 	if strings.Contains(line, "T") || strings.Contains(line, "Z") {
 		t.Fatalf("expected no RFC3339 timestamp, got %q", line)
@@ -170,8 +171,9 @@ func TestAppendHistoryBlocksDoesNotUseInlineCodeForWindow(t *testing.T) {
 				"alertname": "HighLatency",
 				"severity":  "warning",
 			},
-			Count:    1,
-			LastSeen: time.Now(),
+			Count:         1,
+			Notifications: 2,
+			LastSeen:      time.Now(),
 		},
 	}
 
@@ -184,6 +186,9 @@ func TestAppendHistoryBlocksDoesNotUseInlineCodeForWindow(t *testing.T) {
 	summary := blocks[0].Text.Text
 	if !strings.Contains(summary, "Alerts sent in the last 24h") {
 		t.Fatalf("expected plain history window, got %q", summary)
+	}
+	if !strings.Contains(summary, "1 groups, 1 occurrences, 2 notifications") {
+		t.Fatalf("expected occurrences and notifications in summary, got %q", summary)
 	}
 	if strings.Contains(summary, "`24h`") {
 		t.Fatalf("expected no inline-code formatting for history window, got %q", summary)

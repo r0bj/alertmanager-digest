@@ -5,6 +5,19 @@ It can also query Google Cloud Logging for alerts delivered to
 `alertmanager-webhook-logger` during a configurable time window and include a
 historical summary with occurrence counts.
 
+## Slack webhook
+
+Set `SLACK_WEBHOOK_URL` to the Slack incoming webhook URL before running the
+digest:
+
+```sh
+export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
+alertmanager-digest --config config.yaml
+```
+
+The webhook can also be set as `slackWebhookUrl` in `config.yaml`, but the
+environment variable is preferred for secrets.
+
 ## Historical alerts
 
 Enable the `history` section in the config:
@@ -29,7 +42,9 @@ Historical alerts are grouped by the top-level `groupBy` labels before they are
 shown in Slack. When `groupBy` is omitted or empty, alerts are grouped by all
 labels. Occurrence counts are deduplicated by alert `fingerprint` and `startsAt`
 within each group, so repeated Alertmanager webhook batches do not inflate the
-count for alerts that are still firing.
+count for alerts that are still firing. Notification counts show how many
+matching webhook alert entries were logged during the window, and `last notified`
+is based on the latest matching Cloud Logging entry timestamp.
 
 The time window defaults to `24h` and can be overridden per run:
 

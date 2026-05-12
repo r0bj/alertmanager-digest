@@ -131,6 +131,9 @@ func TestAggregateHistoricalAlertsCountsUniqueAlertInstances(t *testing.T) {
 	if highLatency.Count != 1 {
 		t.Fatalf("expected repeated webhook alert to count once, got %d", highLatency.Count)
 	}
+	if highLatency.Notifications != 2 {
+		t.Fatalf("expected repeated webhook alert to count as 2 notifications, got %d", highLatency.Notifications)
+	}
 	if !highLatency.FirstSeen.Equal(firstSeen) {
 		t.Fatalf("expected first seen %s, got %s", firstSeen, highLatency.FirstSeen)
 	}

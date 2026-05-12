@@ -102,11 +102,13 @@ func appendHistoryBlocks(blocks []SlackBlock, cfg Config, historicalAlerts []His
 	}
 
 	totalOccurrences := countHistoricalOccurrences(historicalAlerts)
+	totalNotifications := countHistoricalNotifications(historicalAlerts)
 	summary := fmt.Sprintf(
-		"*Alerts sent in the last %s: %d groups, %d occurrences*",
+		"*Alerts sent in the last %s: %d groups, %d occurrences, %d notifications*",
 		historyWindow,
 		len(historicalAlerts),
 		totalOccurrences,
+		totalNotifications,
 	)
 	if truncated > 0 {
 		summary += fmt.Sprintf("\nShowing first %d, truncated %d.", len(visibleAlerts), truncated)
@@ -126,10 +128,11 @@ func slackFallbackText(cfg Config, alerts []Alert, historicalAlerts []Historical
 	}
 
 	return fmt.Sprintf(
-		"Active unsilenced and uninhibited alerts: %d. Alerts sent in the last %s: %d occurrences.",
+		"Active unsilenced and uninhibited alerts: %d. Alerts sent in the last %s: %d occurrences, %d notifications.",
 		len(alerts),
 		compactDuration(cfg.History.Window.Duration),
 		countHistoricalOccurrences(historicalAlerts),
+		countHistoricalNotifications(historicalAlerts),
 	)
 }
 
@@ -183,10 +186,11 @@ func formatHistoricalAlert(alert HistoricalAlert, groupBy []string, excludeLabel
 	alertname := value(alert.Labels, "alertname", "unknown")
 	labelFields := formatLabelFields(alert.Labels, groupBy, excludeLabels)
 	line := fmt.Sprintf(
-		"• *%s* (%s) occurrences: %d, last seen %s ago",
+		"• *%s* (%s) occurrences: %d, notifications: %d, last notified %s ago",
 		escapeSlack(alertname),
 		strings.Join(labelFields, ", "),
 		alert.Count,
+		alert.Notifications,
 		humanDurationSince(alert.LastSeen),
 	)
 
