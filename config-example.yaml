@@ -30,12 +30,14 @@ alertmanagers:
 filters:
 - severity=~"warning|critical"
 
-# Labels used to group historical alerts and shown next to each alert.
+# Labels used to group active and historical alerts and shown next to each alert.
 # Default when omitted or empty: group by all labels and show all labels
 # except alertname, which is shown as the title. Counts are deduplicated by
-# alert fingerprint and startsAt within each group.
+# alert fingerprint for active alerts, and by alert fingerprint and startsAt
+# within each historical group.
 groupBy:
 - severity
+- alertname
 - cluster
 - namespace
 - team

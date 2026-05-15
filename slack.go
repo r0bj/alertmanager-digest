@@ -56,7 +56,11 @@ func buildSlackPayload(cfg Config, alerts []Alert, historicalAlerts []Historical
 			truncated = len(alerts) - maxAlerts
 		}
 
-		summary := fmt.Sprintf("*Active alerts: %d*", len(alerts))
+		totalActiveAlerts := countActiveAlerts(alerts)
+		summary := fmt.Sprintf("*Active alerts: %d*", totalActiveAlerts)
+		if totalActiveAlerts != len(alerts) {
+			summary = fmt.Sprintf("*Active alerts: %d groups, %d alerts*", len(alerts), totalActiveAlerts)
+		}
 		if truncated > 0 {
 			summary += fmt.Sprintf("\nShowing first %d, truncated %d.", len(visibleAlerts), truncated)
 		}
@@ -124,12 +128,12 @@ func appendHistoryBlocks(blocks []SlackBlock, cfg Config, historicalAlerts []His
 
 func slackFallbackText(cfg Config, alerts []Alert, historicalAlerts []HistoricalAlert) string {
 	if !cfg.History.Enabled {
-		return fmt.Sprintf("Active unsilenced and uninhibited alerts: %d", len(alerts))
+		return fmt.Sprintf("Active unsilenced and uninhibited alerts: %d", countActiveAlerts(alerts))
 	}
 
 	return fmt.Sprintf(
 		"Active unsilenced and uninhibited alerts: %d. Alerts sent in the last %s: %d occurrences, %d notifications.",
-		len(alerts),
+		countActiveAlerts(alerts),
 		compactDuration(cfg.History.Window.Duration),
 		countHistoricalOccurrences(historicalAlerts),
 		countHistoricalNotifications(historicalAlerts),
@@ -166,6 +170,9 @@ func formatAlert(alert Alert, groupBy []string, excludeLabels []string) string {
 	alertname := value(alert.Labels, "alertname", "unknown")
 	labelFields := formatLabelFields(alert.Labels, groupBy, excludeLabels)
 	activeSince := fmt.Sprintf("active for %s", humanDurationSince(alert.StartsAt))
+	if alert.Count > 1 {
+		activeSince = fmt.Sprintf("%d alerts, %s", alert.Count, activeSince)
+	}
 
 	line := fmt.Sprintf(
 		"• *%s* (%s) %s",
@@ -180,6 +187,18 @@ func formatAlert(alert Alert, groupBy []string, excludeLabels []string) string {
 	}
 
 	return line
+}
+
+func countActiveAlerts(alerts []Alert) int {
+	total := 0
+	for _, alert := range alerts {
+		if alert.Count > 0 {
+			total += alert.Count
+			continue
+		}
+		total++
+	}
+	return total
 }
 
 func formatHistoricalAlert(alert HistoricalAlert, groupBy []string, excludeLabels []string) string {

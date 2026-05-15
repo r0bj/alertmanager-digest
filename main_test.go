@@ -157,6 +157,50 @@ func TestAggregateHistoricalAlertsCountsUniqueAlertInstances(t *testing.T) {
 	}
 }
 
+func TestAggregateActiveAlertsGroupsByConfiguredLabels(t *testing.T) {
+	alerts := []Alert{
+		{
+			Labels: map[string]string{
+				"alertname": "ArgocdApplicationNotSynced",
+				"severity":  "warning",
+				"cluster":   "gke-prod",
+				"team":      "websites",
+				"name":      "site-one",
+			},
+			StartsAt:              time.Date(2026, 5, 15, 7, 0, 0, 0, time.UTC),
+			SourceAlertmanager:    "primary",
+			SourceAlertmanagerURL: "https://alertmanager-primary.example",
+		},
+		{
+			Labels: map[string]string{
+				"alertname": "ArgocdApplicationNotSynced",
+				"severity":  "warning",
+				"cluster":   "gke-prod",
+				"team":      "websites",
+				"name":      "site-two",
+			},
+			StartsAt:              time.Date(2026, 5, 15, 7, 2, 0, 0, time.UTC),
+			SourceAlertmanager:    "secondary",
+			SourceAlertmanagerURL: "https://alertmanager-secondary.example",
+		},
+	}
+
+	grouped := aggregateActiveAlerts(alerts, []string{"severity", "alertname", "cluster", "team"})
+
+	if len(grouped) != 1 {
+		t.Fatalf("expected active alerts to be grouped by configured labels, got %d", len(grouped))
+	}
+	if grouped[0].Count != 2 {
+		t.Fatalf("expected grouped active count 2, got %d", grouped[0].Count)
+	}
+	if !grouped[0].StartsAt.Equal(alerts[0].StartsAt) {
+		t.Fatalf("expected grouped alert to keep earliest startsAt, got %s", grouped[0].StartsAt)
+	}
+	if grouped[0].SourceAlertmanager != "primary,secondary" {
+		t.Fatalf("expected merged alertmanager names, got %q", grouped[0].SourceAlertmanager)
+	}
+}
+
 func findHistoricalAlertByName(alerts []HistoricalAlert, alertname string) *HistoricalAlert {
 	for i := range alerts {
 		if alerts[i].Labels["alertname"] == alertname {

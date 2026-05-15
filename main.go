@@ -59,6 +59,7 @@ func main() {
 	}
 
 	alerts = deduplicateAlerts(alerts)
+	alerts = aggregateActiveAlerts(alerts, cfg.GroupBy)
 	sortAlerts(alerts)
 
 	historyCtx, cancelHistory := context.WithTimeout(context.Background(), cfg.Timeouts.History.Duration)

@@ -116,6 +116,25 @@ func TestFormatAlertShowsConfiguredGroupByLabels(t *testing.T) {
 	}
 }
 
+func TestFormatAlertShowsGroupedActiveCount(t *testing.T) {
+	alert := Alert{
+		Labels: map[string]string{
+			"alertname": "ArgocdApplicationNotSynced",
+			"cluster":   "c1",
+			"severity":  "warning",
+			"team":      "websites",
+		},
+		StartsAt: time.Now().Add(-2 * time.Hour),
+		Count:    5,
+	}
+
+	line := formatAlert(alert, []string{"severity", "alertname", "cluster", "team"}, nil)
+
+	if !strings.Contains(line, "5 alerts, active for 2h") {
+		t.Fatalf("expected grouped active count, got %q", line)
+	}
+}
+
 func TestFormatAlertExcludesLabelsFromAllLabels(t *testing.T) {
 	alert := Alert{
 		Labels: map[string]string{
@@ -192,6 +211,32 @@ func TestAppendHistoryBlocksDoesNotUseInlineCodeForWindow(t *testing.T) {
 	}
 	if strings.Contains(summary, "`24h`") {
 		t.Fatalf("expected no inline-code formatting for history window, got %q", summary)
+	}
+}
+
+func TestBuildSlackPayloadSummarizesGroupedActiveAlerts(t *testing.T) {
+	cfg := Config{
+		Title: "Daily Alertmanager digest",
+	}
+	alerts := []Alert{
+		{
+			Labels:   map[string]string{"alertname": "ArgocdApplicationNotSynced", "severity": "warning"},
+			StartsAt: time.Now(),
+			Count:    5,
+		},
+	}
+
+	payload := buildSlackPayload(cfg, alerts, nil, nil, nil)
+
+	if len(payload.Blocks) < 2 || payload.Blocks[1].Text == nil {
+		t.Fatalf("expected active alert summary block, got %#v", payload.Blocks)
+	}
+	summary := payload.Blocks[1].Text.Text
+	if !strings.Contains(summary, "Active alerts: 1 groups, 5 alerts") {
+		t.Fatalf("expected grouped active summary, got %q", summary)
+	}
+	if !strings.Contains(payload.Text, "Active unsilenced and uninhibited alerts: 5") {
+		t.Fatalf("expected fallback text to count grouped alerts, got %q", payload.Text)
 	}
 }
 

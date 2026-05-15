@@ -30,6 +30,7 @@ type Alert struct {
 
 	SourceAlertmanager    string `json:"-"`
 	SourceAlertmanagerURL string `json:"-"`
+	Count                 int    `json:"-"`
 }
 
 type AlertStatus struct {
@@ -144,6 +145,71 @@ func fallbackFingerprint(alert Alert) string {
 	return labelsFingerprint(alert.Labels)
 }
 
+func aggregateActiveAlerts(alerts []Alert, groupBy []string) []Alert {
+	seen := map[string]Alert{}
+
+	for _, alert := range alerts {
+		groupLabels := activeAlertGroupLabels(alert.Labels, groupBy)
+		key := labelsFingerprint(groupLabels)
+		if key == "" {
+			key = fallbackFingerprint(alert)
+		}
+
+		current, exists := seen[key]
+		if !exists {
+			if alert.Count <= 0 {
+				alert.Count = 1
+			}
+			seen[key] = alert
+			continue
+		}
+
+		increment := alert.Count
+		if increment <= 0 {
+			increment = 1
+		}
+		current.Count += increment
+		if current.StartsAt.IsZero() || (!alert.StartsAt.IsZero() && alert.StartsAt.Before(current.StartsAt)) {
+			current.StartsAt = alert.StartsAt
+		}
+		if current.UpdatedAt.IsZero() || alert.UpdatedAt.After(current.UpdatedAt) {
+			current.UpdatedAt = alert.UpdatedAt
+		}
+		if current.GeneratorURL == "" {
+			current.GeneratorURL = alert.GeneratorURL
+		}
+		current.SourceAlertmanager = mergeSource(current.SourceAlertmanager, alert.SourceAlertmanager)
+		current.SourceAlertmanagerURL = mergeSource(current.SourceAlertmanagerURL, alert.SourceAlertmanagerURL)
+		seen[key] = current
+	}
+
+	result := make([]Alert, 0, len(seen))
+	for _, alert := range seen {
+		result = append(result, alert)
+	}
+
+	return result
+}
+
+func activeAlertGroupLabels(labels map[string]string, groupBy []string) map[string]string {
+	if len(groupBy) == 0 {
+		return labels
+	}
+
+	groupLabels := make(map[string]string, len(groupBy))
+	for _, label := range groupBy {
+		if val := labels[label]; val != "" {
+			groupLabels[label] = val
+		}
+	}
+
+	if len(groupLabels) > 0 {
+		return groupLabels
+	}
+
+	return labels
+}
+
 func labelsFingerprint(labels map[string]string) string {
 	keys := make([]string, 0, len(labels))
 	for key := range labels {
@@ -176,6 +242,10 @@ func sortAlerts(alerts []Alert) {
 	sort.SliceStable(alerts, func(i, j int) bool {
 		ai := alerts[i]
 		aj := alerts[j]
+
+		if ai.Count != aj.Count {
+			return ai.Count > aj.Count
+		}
 
 		si := severityRank(ai.Labels["severity"])
 		sj := severityRank(aj.Labels["severity"])
