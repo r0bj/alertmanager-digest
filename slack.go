@@ -376,7 +376,7 @@ func mrkdwnBlock(text string) SlackBlock {
 	const maxSlackTextLen = 3000
 
 	if len(text) > maxSlackTextLen {
-		text = text[:maxSlackTextLen-20] + "\n…truncated…"
+		text = truncateSlackText(text, maxSlackTextLen)
 	}
 
 	return SlackBlock{
@@ -386,6 +386,21 @@ func mrkdwnBlock(text string) SlackBlock {
 			Text: text,
 		},
 	}
+}
+
+func truncateSlackText(text string, maxLen int) string {
+	const suffix = "\n…truncated…"
+
+	if len(text) <= maxLen {
+		return text
+	}
+
+	text = text[:maxLen-len(suffix)]
+	if linkStart := strings.LastIndex(text, "<"); linkStart > strings.LastIndex(text, ">") {
+		text = strings.TrimRight(text[:linkStart], " \n|")
+	}
+
+	return text + suffix
 }
 
 func dividerBlock() SlackBlock {

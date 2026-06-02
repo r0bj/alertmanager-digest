@@ -282,6 +282,22 @@ func TestSlackTruncationSummaryDoesNotUseInlineCode(t *testing.T) {
 	}
 }
 
+func TestMrkdwnBlockDoesNotTruncateInsideLink(t *testing.T) {
+	text := "• *KubeDaemonSetRolloutStuck*\n  <https://prometheus.example/graph?g0.expr=" + strings.Repeat("a", 4000) + "|Prometheus>"
+
+	block := mrkdwnBlock(text)
+
+	if len(block.Text.Text) > 3000 {
+		t.Fatalf("expected block text to fit Slack limit, got %d bytes", len(block.Text.Text))
+	}
+	if strings.Contains(block.Text.Text, "<https://") {
+		t.Fatalf("expected incomplete link to be omitted, got %q", block.Text.Text)
+	}
+	if !strings.HasSuffix(block.Text.Text, "\n…truncated…") {
+		t.Fatalf("expected truncation suffix, got %q", block.Text.Text)
+	}
+}
+
 func TestBuildSlackPayloadUsesTopLevelBlocks(t *testing.T) {
 	cfg := Config{
 		Title: "Daily Alertmanager digest",
